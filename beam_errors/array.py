@@ -221,6 +221,7 @@ def read_array_from_file(filepath, pointing=1 + 0j):
     array = []
     constructing_station = []
     tile = []
+    this_tile = None
     with open(filepath, "r") as f:
         inputline = f.readline().strip("\n")
         if inputline == "":

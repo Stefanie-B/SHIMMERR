@@ -183,7 +183,7 @@ class Station:
         Resets all elements in the tile to the common gain and pointing (removing individual perturbations)
         """
         [
-            element.update_tile(new_pointing=self.tile_pointing, new_gain=self.g)
+            element.update_tile(new_pointing=self.d, new_gain=self.g)
             for element in self.elements
         ]
 

@@ -138,7 +138,7 @@ class Tile:
 
 
 class Station:
-    def __init__(self, positions, pointing=1.0 + 0j, gain=1.0 + 0j, tile_pointing=None):
+    def __init__(self, positions, pointing=1.0 + 0j, gain=1.0 + 0j):
         """
         Parameters
         ----------
@@ -150,15 +150,12 @@ class Station:
             Complex gain of the tile (shared by all elements), by default 1
         """
         self.d = pointing
-        if tile_pointing is None:
-            self.tile_pointing = self.d
         self.g = gain
 
         self.p = np.mean(positions, axis=(0, 1))
 
         self.elements = [
-            Tile(per_tile_positions, self.p, self.d, self.g)
-            for per_tile_positions in positions
+            Tile(per_tile_positions, self.d, self.g) for per_tile_positions in positions
         ]
 
     def update_station(self, new_pointing=None, new_gain=None):
@@ -214,3 +211,46 @@ class Station:
 
         station_response = sum(element_responses)
         return station_response
+
+
+def read_array_from_file(filepath, pointing=1 + 0j):
+    # Stations separated by empty lines
+    # Tiles are the first number
+    # Next 3 characters are position etrs
+    # final one is complex gain
+    # in either lat-lon or in etrs, or provide helper functions
+    # gains
+    # add n_jobs param
+    # check if jit helps
+
+    array = []
+    constructing_station = []
+    tile = []
+    with open(filepath, "r") as f:
+        inputline = f.readline().strip("\n")
+        if inputline == "":
+            # station done
+            full_station = Station(positions=constructing_station, pointing=pointing)
+            array.append(full_station)
+
+            constructing_station = []
+            tile = []
+
+        else:
+            tile_identifier, x, y, z = inputline.split(",")
+
+            # Check if a new tile has started
+            if tile != []:
+                if tile_identifier != this_tile:
+                    constructing_station.append(tile)
+            this_tile = tile_identifier
+
+            # Add the element
+            new_position = np.array([x, y, z]).astype(float)
+            tile.append(new_position)
+
+    # Add the last station
+    full_station = Station(positions=constructing_station, pointing=pointing)
+    array.append(full_station)
+
+    return array

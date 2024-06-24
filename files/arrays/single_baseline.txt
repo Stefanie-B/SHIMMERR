@@ -1,0 +1,7 @@
+# Stations separated by empty lines
+# Tiles are the first number
+# Next 3 characters are position etrs
+
+0,0,0,0,
+
+0,0,0,1,

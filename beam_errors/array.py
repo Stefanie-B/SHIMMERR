@@ -1,8 +1,11 @@
 import numpy as np
+from joblib import Parallel, delayed
 
 # For LOFAR specific
 from lofarantpos.db import LofarAntennaDatabase
 from lofarantpos import geo
+
+c = 299792458  # m/s
 
 
 class Antenna:
@@ -22,7 +25,7 @@ class Antenna:
         Weight within the array factor for this element. This is given by the product of the gain and the pointing
     """
 
-    def __init__(self, position, spatial_delay=0, gain=1.0 + 0j):
+    def __init__(self, position, gain=1.0 + 0j):
         """
         Parameters
         ----------
@@ -35,31 +38,24 @@ class Antenna:
         """
         self.p = position
         self.g = gain
-        self.d = spatial_delay
 
-    def calc_delay(self, pointing, reference_position=[0, 0, 0]):
-        relative_position = self.p - reference_position
-        self.d = relative_position @ pointing
-
-    def update_antenna(self, new_delay=None, new_gain=None):
+    def update_antenna(self, new_gain=None):
         """
         Updates antenna weight based on a new pointing vector or new gain
         """
-        if new_delay is not None:
-            self.d = new_delay
         if new_gain is not None:
             self.g = new_gain
 
-    def update_common_settings(self, new_d=None, old_d=0, new_g=None, old_g=0 + 0j):
-        if new_d is not None:
-            new_delay = self.d - old_d + new_d
+    def update_common_settings(self, new_g, old_g=0 + 0j):
+        new_gain = self.g - old_g + new_g
+        self.update_antenna(new_gain)
+
+    def calculate_response(self, direction, frequency, mode="omnidirectional"):
+        # TODO: implement Gaussian beam
+        if mode == "omnidirectional":
+            return self.g
         else:
-            new_delay = None
-        if new_g is not None:
-            new_gain = self.g - old_g + new_g
-        else:
-            new_g = None
-        self.update_antenna(new_delay, new_gain)
+            raise ValueError("Lowest level antenna mode {mode} not implemented.")
 
 
 class Tile:
@@ -76,7 +72,7 @@ class Tile:
         Complex pointing of the tile (in principle computed as exp(j b), where b is the geometric phase delay)
     """
 
-    def __init__(self, positions, central_position, pointing, gain=1.0 + 0j):
+    def __init__(self, positions, pointing, gain=1.0 + 0j):
         """
         Parameters
         ----------
@@ -88,17 +84,11 @@ class Tile:
             Complex gain of the tile (shared by all elements), by default 1
         """
         self.p = np.mean([element.p for element in self.elements], axis=0)
-        relative_position = self.p - reference_position
-        self.d = relative_position @ pointing
-        self.d = spatial_delay
+        self.d = pointing
         self.g = gain
-        self.elements = [Antenna(position, self.d, self.g) for position in positions]
+        self.elements = [Antenna(position, self.g) for position in positions]
 
-    def calc_delay(self, pointing, reference_position=[0, 0, 0]):
-        relative_position = self.p - reference_position
-        self.d = relative_position @ pointing
-
-    def update_tile(self, new_delay, new_gain):
+    def update_tile(self, new_pointing=None, new_gain=None):
         """
         Updates common tile gain or pointing.
 
@@ -106,23 +96,45 @@ class Tile:
         new_element_gain = old_element_gain - old_common_gain + new_common_gain
         This retains perturbations set on the elements
         """
-        [
-            element.update_common_settings(
-                new_d=new_delay, old_d=self.d, new_g=new_gain, old_g=self.g
-            )
-            for element in self.elements
-        ]
-        self.g = new_gain
-        self.d = new_delay
+        if new_gain is not None:
+            [
+                element.update_common_settings(new_g=new_gain, old_g=self.g)
+                for element in self.elements
+            ]
+            self.g = new_gain
+        if new_pointing is not None:
+            self.d = new_pointing
 
     def reset_elements(self):
         """
         Resets all elements in the tile to the common gain and pointing (removing individual perturbations)
         """
-        [
-            element.update_antenna(new_delay=self.d, new_gain=self.g)
+        [element.update_antenna(new_gain=self.g) for element in self.elements]
+
+    def calculate_response(self, direction, frequency, antenna_mode="omnidirectional"):
+        k = 2 * np.pi * frequency / c
+
+        def element_response_wrapper(element, direction, frequency, mode):
+            antenna_beam = element.calculate_response(
+                direction=direction, frequency=frequency, mode=mode
+            )
+            direction_offset_from_pointing = direction - self.d
+            progessive_phase_delay = k * element.p @ direction_offset_from_pointing
+            array_factor = np.exp(1j * progessive_phase_delay)
+            return antenna_beam * array_factor
+
+        element_responses = Parallel(n_jobs=-1)(
+            delayed(element_response_wrapper)(
+                element=element,
+                direction=direction,
+                frequency=frequency,
+                mode=antenna_mode,
+            )
             for element in self.elements
-        ]
+        )
+
+        tile_response = sum(element_responses)
+        return tile_response
 
 
 class Station:
@@ -137,29 +149,37 @@ class Station:
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
-        self.s = pointing
+        self.d = pointing
         if tile_pointing is None:
-            self.tile_pointing = self.s
+            self.tile_pointing = self.d
         self.g = gain
 
         self.p = np.mean(positions, axis=(0, 1))
 
         self.elements = [
-            Tile(per_tile_positions, self.p, self.s, self.g)
+            Tile(per_tile_positions, self.p, self.d, self.g)
             for per_tile_positions in positions
         ]
 
-    def update_station(self, new_gain=None):
+    def update_station(self, new_pointing=None, new_gain=None):
         """
         Updates common tile gain. The new gains of the elements are set as:
         new_element_gain = old_element_gain - old_common_gain + new_common_gain
         This retains perturbations set on the elements
         """
-        [
-            element.update_gain(new_gain=element.g - self.g + new_gain)
-            for element in self.elements
-        ]
-        self.g = new_gain
+        if new_gain is not None:
+            [
+                element.update_tile(
+                    new_pointing=new_pointing, new_gain=element.g - self.g + new_gain
+                )
+                for element in self.elements
+            ]
+            self.g = new_gain
+        else:
+            [
+                element.update_tile(new_pointing=new_pointing)
+                for element in self.elements
+            ]
 
     def reset_elements(self):
         """
@@ -170,9 +190,27 @@ class Station:
             for element in self.elements
         ]
 
+    def calculate_response(self, direction, frequency, antenna_mode="omnidirectional"):
+        k = 2 * np.pi * frequency / c
 
-### TODO:
-### - Find good way to do delay calc
-### - Fix pointing flexible for tile pointing errors
-### - Fix documentation (especially on update functions)
-### - Write tests
+        def element_response_wrapper(element, direction, frequency, mode):
+            tile_beam = element.calculate_response(
+                direction=direction, frequency=frequency, antenna_mode=antenna_mode
+            )
+            direction_offset_from_pointing = direction - self.d
+            progessive_phase_delay = k * element.p @ direction_offset_from_pointing
+            array_factor = np.exp(1j * progessive_phase_delay)
+            return tile_beam * array_factor
+
+        element_responses = Parallel(n_jobs=-1)(
+            delayed(element_response_wrapper)(
+                element=element,
+                direction=direction,
+                frequency=frequency,
+                mode=antenna_mode,
+            )
+            for element in self.elements
+        )
+
+        station_response = sum(element_responses)
+        return station_response

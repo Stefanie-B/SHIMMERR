@@ -111,7 +111,9 @@ class Tile:
         """
         [element.update_antenna(new_gain=self.g) for element in self.elements]
 
-    def calculate_response(self, direction, frequency, antenna_mode="omnidirectional"):
+    def calculate_response(
+        self, direction, frequency, antenna_mode="omnidirectional", n_jobs=-1
+    ):
         k = 2 * np.pi * frequency / c
 
         def element_response_wrapper(element, direction, frequency, mode):
@@ -123,7 +125,7 @@ class Tile:
             array_factor = np.exp(1j * progessive_phase_delay)
             return antenna_beam * array_factor
 
-        element_responses = Parallel(n_jobs=-1)(
+        element_responses = Parallel(n_jobs=n_jobs)(
             delayed(element_response_wrapper)(
                 element=element,
                 direction=direction,
@@ -187,7 +189,9 @@ class Station:
             for element in self.elements
         ]
 
-    def calculate_response(self, direction, frequency, antenna_mode="omnidirectional"):
+    def calculate_response(
+        self, direction, frequency, antenna_mode="omnidirectional", n_jobs=-1
+    ):
         k = 2 * np.pi * frequency / c
 
         def element_response_wrapper(element, direction, frequency, mode):
@@ -199,7 +203,7 @@ class Station:
             array_factor = np.exp(1j * progessive_phase_delay)
             return tile_beam * array_factor
 
-        element_responses = Parallel(n_jobs=-1)(
+        element_responses = Parallel(n_jobs=n_jobs)(
             delayed(element_response_wrapper)(
                 element=element,
                 direction=direction,
@@ -214,15 +218,6 @@ class Station:
 
 
 def read_array_from_file(filepath, pointing=1 + 0j):
-    # Stations separated by empty lines
-    # Tiles are the first number
-    # Next 3 characters are position etrs
-    # final one is complex gain
-    # in either lat-lon or in etrs, or provide helper functions
-    # gains
-    # add n_jobs param
-    # check if jit helps
-
     array = []
     constructing_station = []
     tile = []

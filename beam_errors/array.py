@@ -67,7 +67,7 @@ class Antenna:
         if mode == "omnidirectional":
             return self.g
         else:
-            raise ValueError("Lowest level antenna mode {mode} not implemented.")
+            raise ValueError(f"Lowest level antenna mode {mode} not implemented.")
 
 
 class Tile:
@@ -130,13 +130,13 @@ class Tile:
     ):
         k = 2 * np.pi * frequency / c
 
-        def element_response_wrapper(element, direction, frequency, mode):
+        def element_response_wrapper(element, direction, frequency):
             antenna_beam = element.calculate_response(
-                direction=direction, frequency=frequency, mode=mode
+                direction=direction, frequency=frequency, mode=antenna_mode
             )
             direction_offset_from_pointing = direction - self.d
             progessive_phase_delay = k * element.p @ direction_offset_from_pointing
-            array_factor = np.exp(1j * progessive_phase_delay)
+            array_factor = np.exp(-1j * progessive_phase_delay)
             return antenna_beam * array_factor
 
         element_responses = Parallel(n_jobs=n_jobs)(
@@ -144,13 +144,13 @@ class Tile:
                 element=element,
                 direction=direction,
                 frequency=frequency,
-                mode=antenna_mode,
             )
             for element in self.elements
         )
+        print(element_responses)
 
-        tile_response = sum(element_responses)
-        return tile_response
+        tile_response = sum(element_responses) / len(self.elements)
+        return self.g * tile_response
 
 
 class Station:
@@ -208,7 +208,7 @@ class Station:
     ):
         k = 2 * np.pi * frequency / c
 
-        def element_response_wrapper(element, direction, frequency, mode):
+        def element_response_wrapper(element, direction, frequency):
             tile_beam = element.calculate_response(
                 direction=direction, frequency=frequency, antenna_mode=antenna_mode
             )
@@ -222,7 +222,6 @@ class Station:
                 element=element,
                 direction=direction,
                 frequency=frequency,
-                mode=antenna_mode,
             )
             for element in self.elements
         )

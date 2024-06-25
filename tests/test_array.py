@@ -98,6 +98,29 @@ def test_Tile_init(args, expected, expected_raises):
             [[0, 0, 1], 150e6, "omnidirectional", 2],
             2,
         ),
+        (
+            [[[-1, 0, 0], [1, 0, 0]], [0, np.sqrt(2) / 2, np.sqrt(2) / 2]],
+            [[0, 0, 1], 150e6],
+            1,
+        ),
+        (
+            [[[-1, 0, 0], [1, 0, 0]], [0, 0, 1]],
+            [[np.sqrt(2) / 2, 0, np.sqrt(2) / 2], 150e6, "omnidirectional", 1],
+            (
+                np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+                + np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+            )
+            / 2,
+        ),
+        (
+            [[[-1, 0, 0], [1, 0, 0]], [np.sqrt(2) / 2, 0, np.sqrt(2) / 2]],
+            [[0, 0, 1], 150e6, "omnidirectional", 1],
+            (
+                np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+                + np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+            )
+            / 2,
+        ),
     ],
 )
 def test_Tile_response(args_init, args_response, expected):

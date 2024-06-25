@@ -201,6 +201,11 @@ def test_Station_init(args, expected, expected_raises):
             )
             / 2,
         ),
+        (
+            [[[[-1, -1, 0], [-1, 1, 0]], [[1, 1, 0]], [[1, -1, 0]]], [0, 0, 1], 4j],
+            [[0, 0, 1], 150e6, "omnidirectional", 4],
+            4j,
+        ),
     ],
 )
 def test_Station_response(args_init, args_response, expected):

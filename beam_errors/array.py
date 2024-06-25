@@ -1,10 +1,6 @@
 import numpy as np
 from joblib import Parallel, delayed
 
-# For LOFAR specific
-from lofarantpos.db import LofarAntennaDatabase
-from lofarantpos import geo
-
 c = 299792458  # m/s
 
 
@@ -215,38 +211,3 @@ class Station:
 
         station_response = sum(element_responses)
         return station_response
-
-
-def read_array_from_file(filepath, pointing=1 + 0j):
-    array = []
-    constructing_station = []
-    tile = []
-    this_tile = None
-    with open(filepath, "r") as f:
-        inputline = f.readline().strip("\n")
-        if inputline == "":
-            # station done
-            full_station = Station(positions=constructing_station, pointing=pointing)
-            array.append(full_station)
-
-            constructing_station = []
-            tile = []
-
-        else:
-            tile_identifier, x, y, z = inputline.split(",")
-
-            # Check if a new tile has started
-            if tile != []:
-                if tile_identifier != this_tile:
-                    constructing_station.append(tile)
-            this_tile = tile_identifier
-
-            # Add the element
-            new_position = np.array([x, y, z]).astype(float)
-            tile.append(new_position)
-
-    # Add the last station
-    full_station = Station(positions=constructing_station, pointing=pointing)
-    array.append(full_station)
-
-    return array

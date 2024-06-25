@@ -130,5 +130,83 @@ def test_Tile_response(args_init, args_response, expected):
     npt.assert_almost_equal(test_tile.calculate_response(*args_response), expected, 5)
 
 
-# station init --> add pointing check (unit vector)
-# calculate response
+@pytest.mark.parametrize(
+    "args, expected, expected_raises",
+    [
+        (
+            [[[[0, 0, 0], [1, 1, 1]]], [0, 0, 1], 2],
+            [[0.5, 0.5, 0.5], [0, 0, 1], 2, [0.5, 0.5, 0.5], 1, [0, 0, 0], 1],
+            None,
+        ),
+        (
+            [[[[0, 4j, 0], [1, 1, 1]]], [0, 0, 1], 2],
+            [],
+            TypeError,
+        ),
+        (
+            [[[[0, 0, 0], [1, 1, 1]], [[-6.5, -10.5, -1.5]]], [0, 0, 1], 2],
+            [[-3, -5, -0.5], [0, 0, 1], 2, [0.5, 0.5, 0.5], 1, [0, 0, 0], 1],
+            None,
+        ),
+        (
+            [[[[0, 0, 0]], [[1, 1, 1], [-7, -10, -1]]], [0, 1, 0]],
+            [[-1.5, -2.25, 0], [0, 1, 0], 1, [0, 0, 0], 1 + 0j, [0, 0, 0], 1 + 0j],
+            None,
+        ),
+        (
+            [[[[0, 0, 0, 0], [1, 1, 1], [-7, -10, -1]]], [0, 0, 1]],
+            [],
+            ValueError,
+        ),
+    ],
+)
+def test_Station_init(args, expected, expected_raises):
+    from beam_errors.array import Station
+
+    if expected_raises is not None:
+        with pytest.raises(expected_raises):
+            test_station = Station(*args)
+    else:
+        test_station = Station(*args)
+        npt.assert_almost_equal(test_station.p, expected[0], 5)
+        npt.assert_equal(test_station.d, expected[1])
+        npt.assert_equal(test_station.g, expected[2])
+        npt.assert_equal(test_station.elements[0].p, expected[3])
+        npt.assert_array_almost_equal(test_station.elements[0].g, expected[4], 5)
+        npt.assert_equal(test_station.elements[0].elements[0].p, expected[5])
+        npt.assert_array_almost_equal(
+            test_station.elements[0].elements[0].g, expected[6], 5
+        )
+
+
+@pytest.mark.parametrize(
+    "args_init, args_response, expected",
+    [
+        (
+            [[[[-1, -1, 0], [1, 1, 0]]], [0, 0, 1], 2],
+            [[0, 0, 1], 150e6, "omnidirectional", 2],
+            2,
+        ),
+        (
+            [[[[-1, 0, 0], [1, 0, 0]]], [0, np.sqrt(2) / 2, np.sqrt(2) / 2]],
+            [[0, 0, 1], 150e6],
+            1,
+        ),
+        (
+            [[[[-1, 0, 0], [1, 0, 0]]], [np.sqrt(2) / 2, 0, np.sqrt(2) / 2]],
+            [[0, 0, 1], 150e6, "omnidirectional", 1],
+            (
+                np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+                + np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+            )
+            / 2,
+        ),
+    ],
+)
+def test_Station_response(args_init, args_response, expected):
+    from beam_errors.array import Station
+
+    test_station = Station(*args_init)
+    npt.assert_almost_equal(
+        test_station.calculate_response(*args_response), expected, 5
+    )

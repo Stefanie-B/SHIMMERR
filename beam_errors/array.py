@@ -168,11 +168,12 @@ class Station:
         self.d = np.array(pointing)
         self.g = gain
 
-        self.p = np.mean(positions, axis=(0, 1))
+        # self.p = np.mean(np.array(positions), axis=(0, 1))
 
         self.elements = [
             Tile(per_tile_positions, self.d) for per_tile_positions in positions
         ]
+        self.p = np.mean([element.p for element in self.elements], axis=0)
 
     def update_station(self, new_pointing=None, new_gain=None):
         """
@@ -225,5 +226,5 @@ class Station:
             )
             for element in self.elements
         )
-        station_response = sum(list(element_responses))
-        return station_response
+        station_response = sum(element_responses) / len(self.elements)
+        return self.g * station_response

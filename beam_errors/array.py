@@ -1,5 +1,6 @@
 import numpy as np
 from joblib import Parallel, delayed
+import numbers
 
 c = 299792458  # m/s
 
@@ -32,6 +33,19 @@ class Antenna:
         gain : complex, optional
             Complex gain of the element, by default 1
         """
+        if not isinstance(gain, numbers.Complex):
+            raise TypeError(f"Gain of {gain} not a permitted complex number.")
+
+        position = list(position)
+        if not len(position) == 3:
+            raise ValueError(f"Element position {position} not 3 dimensional.")
+
+        for p in range(3):
+            if not isinstance(position[p], numbers.Real):
+                raise TypeError(
+                    f"Position element {p} equals {position[p]}, this is not a valid number."
+                )
+
         self.p = position
         self.g = gain
 
@@ -39,6 +53,8 @@ class Antenna:
         """
         Updates antenna weight based on a new pointing vector or new gain
         """
+        if not isinstance(new_gain, numbers.Complex):
+            raise TypeError(f"Gain of {new_gain} not a permitted complex number.")
         if new_gain is not None:
             self.g = new_gain
 

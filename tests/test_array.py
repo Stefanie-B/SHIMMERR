@@ -43,3 +43,69 @@ def test_Antenna_response(args_init, args_response, expected):
 
     test_antenna = Antenna(*args_init)
     npt.assert_equal(test_antenna.calculate_response(*args_response), expected)
+
+
+@pytest.mark.parametrize(
+    "args, expected, expected_raises",
+    [
+        (
+            [[[0, 0, 0], [1, 1, 1]], [0, 0, 1], 2],
+            [[0.5, 0.5, 0.5], [0, 0, 1], 2, [0, 0, 0], 1],
+            None,
+        ),
+        (
+            [[[0, 4j, 0], [1, 1, 1]], [0, 0, 1], 2],
+            [[0.5, 0.5, 0.5], [0, 0, 1], 2, [0, 0, 0], 1],
+            TypeError,
+        ),
+        (
+            [[[0, 0, 0], [1, 1, 1], [-7, -10, -1]], [0, 0, 1], 2],
+            [[-2, -3, 0], [0, 0, 1], 2, [0, 0, 0], 1],
+            None,
+        ),
+        (
+            [[[0, 0, 0], [1, 1, 1], [-7, -10, -1]], [0, 0, 1]],
+            [[-2, -3, 0], [0, 0, 1], 1, [0, 0, 0], 1 + 0j],
+            None,
+        ),
+        (
+            [[[0, 0, 0, 0], [1, 1, 1], [-7, -10, -1]], [0, 0, 1]],
+            [[-2, -3, 0], [0, 0, 1], 1, [0, 0, 0], 1],
+            ValueError,
+        ),
+    ],
+)
+def test_Tile_init(args, expected, expected_raises):
+    from beam_errors.array import Tile
+
+    if expected_raises is not None:
+        with pytest.raises(expected_raises):
+            test_tile = Tile(*args)
+    else:
+        test_tile = Tile(*args)
+        npt.assert_almost_equal(test_tile.p, expected[0], 5)
+        npt.assert_equal(test_tile.d, expected[1])
+        npt.assert_equal(test_tile.g, expected[2])
+        npt.assert_equal(test_tile.elements[0].p, expected[3])
+        npt.assert_array_almost_equal(test_tile.elements[0].g, expected[4], 5)
+
+
+@pytest.mark.parametrize(
+    "args_init, args_response, expected",
+    [
+        (
+            [[[-1, -1, 0], [1, 1, 0]], [0, 0, 1], 2],
+            [[0, 0, 1], 150e6, "omnidirectional", 2],
+            2,
+        ),
+    ],
+)
+def test_Tile_response(args_init, args_response, expected):
+    from beam_errors.array import Tile
+
+    test_tile = Tile(*args_init)
+    npt.assert_almost_equal(test_tile.calculate_response(*args_response), expected, 5)
+
+
+# station init --> add pointing check (unit vector)
+# calculate response

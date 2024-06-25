@@ -36,7 +36,7 @@ class Antenna:
         if not isinstance(gain, numbers.Complex):
             raise TypeError(f"Gain of {gain} not a permitted complex number.")
 
-        position = list(position)
+        position = np.array(position)
         if not len(position) == 3:
             raise ValueError(f"Element position {position} not 3 dimensional.")
 
@@ -95,10 +95,12 @@ class Tile:
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
-        self.p = np.mean([element.p for element in self.elements], axis=0)
-        self.d = pointing
+        self.d = np.array(pointing)
         self.g = gain
-        self.elements = [Antenna(position, self.g) for position in positions]
+
+        # The gain of the tile is already applied, so the Antenna gain should be unity to avoid applying it twice
+        self.elements = [Antenna(position) for position in positions]
+        self.p = np.mean([element.p for element in self.elements], axis=0)
 
     def update_tile(self, new_pointing=None, new_gain=None):
         """
@@ -115,13 +117,13 @@ class Tile:
             ]
             self.g = new_gain
         if new_pointing is not None:
-            self.d = new_pointing
+            self.d = np.array(new_pointing)
 
     def reset_elements(self):
         """
         Resets all elements in the tile to the common gain and pointing (removing individual perturbations)
         """
-        [element.update_antenna(new_gain=self.g) for element in self.elements]
+        [element.update_antenna(new_gain=1) for element in self.elements]
 
     def calculate_response(
         self, direction, frequency, antenna_mode="omnidirectional", n_jobs=-1
@@ -163,13 +165,13 @@ class Station:
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
-        self.d = pointing
+        self.d = np.array(pointing)
         self.g = gain
 
         self.p = np.mean(positions, axis=(0, 1))
 
         self.elements = [
-            Tile(per_tile_positions, self.d, self.g) for per_tile_positions in positions
+            Tile(per_tile_positions, self.d) for per_tile_positions in positions
         ]
 
     def update_station(self, new_pointing=None, new_gain=None):
@@ -224,6 +226,5 @@ class Station:
             )
             for element in self.elements
         )
-
-        station_response = sum(element_responses)
+        station_response = sum(list(element_responses))
         return station_response

@@ -147,7 +147,6 @@ class Tile:
             )
             for element in self.elements
         )
-        print(element_responses)
 
         tile_response = sum(element_responses) / len(self.elements)
         return self.g * tile_response

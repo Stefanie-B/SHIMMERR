@@ -1,8 +1,8 @@
-from array import Station
+from beam_errors.array import Station
+import numpy as np
 
 # For LOFAR specific
 from lofarantpos.db import LofarAntennaDatabase
-from lofarantpos import geo
 
 
 def load_array_from_file(filepath, pointing=1 + 0j):
@@ -11,31 +11,41 @@ def load_array_from_file(filepath, pointing=1 + 0j):
     tile = []
     this_tile = None
     with open(filepath, "r") as f:
-        inputline = f.readline().strip("\n")
-        if inputline == "":
-            # station done
-            full_station = Station(positions=constructing_station, pointing=pointing)
-            array.append(full_station)
-
-            constructing_station = []
-            tile = []
-
-        else:
-            tile_identifier, x, y, z = inputline.split(",")
-
-            # Check if a new tile has started
-            if tile != []:
-                if tile_identifier != this_tile:
+        for line in f:
+            inputline = line.strip("\n")
+            if inputline.startswith("#"):
+                continue
+            elif inputline == "":
+                if len(tile) > 0:
                     constructing_station.append(tile)
-            this_tile = tile_identifier
+                if len(constructing_station) > 0:
+                    # station done
+                    full_station = Station(
+                        positions=constructing_station, pointing=pointing
+                    )
+                    array.append(full_station)
 
-            # Add the element
-            new_position = np.array([x, y, z]).astype(float)
-            tile.append(new_position)
+                    constructing_station = []
+                    tile = []
+            else:
+                tile_identifier, x, y, z = inputline.split(",")
 
-    # Add the last station
-    full_station = Station(positions=constructing_station, pointing=pointing)
-    array.append(full_station)
+                # Check if a new tile has started
+                if tile != []:
+                    if tile_identifier != this_tile:
+                        constructing_station.append(tile)
+                this_tile = tile_identifier
+
+                # Add the element
+                new_position = np.array([x, y, z]).astype(float)
+                tile.append(new_position)
+
+    if len(tile) > 0:
+        constructing_station.append(tile)
+    if len(constructing_station) > 0:
+        # station done
+        full_station = Station(positions=constructing_station, pointing=pointing)
+        array.append(full_station)
 
     return array
 
@@ -97,7 +107,14 @@ def load_LOFAR(pointing=1 + 0j, mode="EoR"):
             or (station.endswith("HBA") and station.startswith("RS"))
             and (
                 station
-                not in ["RS208HBA", "RS210HBA", "RS310HBA", "RS409HBA", "RS508HBA"]
+                not in [
+                    "RS208HBA",
+                    "RS210HBA",
+                    "RS310HBA",
+                    "RS409HBA",
+                    "RS508HBA",
+                    "RS509HBA",
+                ]
             )
         ]
         taper_RS = True
@@ -136,17 +153,19 @@ def load_LOFAR(pointing=1 + 0j, mode="EoR"):
 
         dipole_elements_pqr = db.hba_dipole_pqr(station_name)
 
-        # Taper the RS by removing unused elements
+        # Taper the RS by removing unused elements. We taper the tiles, so we have to divide the dipole number by 16 to get the tile number
         if taper_RS and station_name.startswith("RS"):
             filtered_dipole_elements_pqr = [
-                ant for ant in dipole_elements_pqr if ant.antenna_id not in taper_tiles
+                dipole
+                for dipole_number, dipole in enumerate(dipole_elements_pqr)
+                if dipole_number // 16 not in taper_tiles
             ]
         else:
             filtered_dipole_elements_pqr = dipole_elements_pqr
 
         # rotate the dipoles from the local frame to ETRS
         rotation_matrix = db.pqr_to_etrs[station_name]
-        station_center = np.mean(filtered_dipole_elements_pqr, axis=0)
+        station_center = db.phase_centres[station_name]
         dipole_elements_etrs = (
             filtered_dipole_elements_pqr @ rotation_matrix.T + station_center
         )

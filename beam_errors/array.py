@@ -46,8 +46,9 @@ class Antenna:
                     f"Position element {p} equals {position[p]}, this is not a valid number."
                 )
 
-        self.p = position
-        self.g = gain
+        self.p = position.astype(float)
+        self.g = complex(gain)
+        self.p_ENU = None
 
     def update_antenna(self, new_gain=None):
         """
@@ -56,16 +57,22 @@ class Antenna:
         if not isinstance(new_gain, numbers.Complex):
             raise TypeError(f"Gain of {new_gain} not a permitted complex number.")
         if new_gain is not None:
-            self.g = new_gain
+            self.g = complex(new_gain)
 
     def update_common_settings(self, new_g, old_g=0 + 0j):
         new_gain = self.g - old_g + new_g
         self.update_antenna(new_gain)
 
     def calculate_response(self, direction, frequency, mode="omnidirectional"):
-        # TODO: implement Gaussian beam
         if mode == "omnidirectional":
             return self.g
+        elif mode == "simplified":
+            # USE WITH EXTREME CAUTION
+            # This beam is more of an 'artist impression' of what a beam looks like than a serious simulation
+            # you can use it to get a general feel for the effect of the element beam but not for quantative results
+            inclination = np.arccos(direction[2])  # assumes unit length direction
+            beam_shape = np.exp(-(inclination**3) * 2)
+            return self.g * beam_shape
         else:
             raise ValueError(f"Lowest level antenna mode {mode} not implemented.")
 
@@ -95,12 +102,14 @@ class Tile:
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
-        self.d = np.array(pointing)
-        self.g = gain
+        self.d = np.array(pointing).astype(float)
+        self.g = complex(gain)
 
         # The gain of the tile is already applied, so the Antenna gain should be unity to avoid applying it twice
         self.elements = [Antenna(position) for position in positions]
         self.p = np.mean([element.p for element in self.elements], axis=0)
+
+        self.p_ENU = None
 
     def update_tile(self, new_pointing=None, new_gain=None):
         """
@@ -115,9 +124,9 @@ class Tile:
                 element.update_common_settings(new_g=new_gain, old_g=self.g)
                 for element in self.elements
             ]
-            self.g = new_gain
+            self.g = complex(new_gain)
         if new_pointing is not None:
-            self.d = np.array(new_pointing)
+            self.d = np.array(new_pointing).astype(float)
 
     def reset_elements(self):
         """
@@ -151,6 +160,14 @@ class Tile:
         tile_response = sum(element_responses) / len(self.elements)
         return self.g * tile_response
 
+    def set_ENU_positions(self, rotation_matrix):
+        self.p_ENU = np.dot(rotation_matrix, self.p)
+        for element in self.elements:
+            element.p_ENU = np.dot(rotation_matrix, element.p) - self.p_ENU
+
+    def get_element_property(self, property):
+        return np.array([getattr(element, property) for element in self.elements])
+
 
 class Station:
     def __init__(self, positions, pointing=1.0 + 0j, gain=1.0 + 0j):
@@ -164,8 +181,8 @@ class Station:
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
-        self.d = np.array(pointing)
-        self.g = gain
+        self.d = np.array(pointing).astype(float)
+        self.g = complex(gain)
 
         # self.p = np.mean(np.array(positions), axis=(0, 1))
 
@@ -181,18 +198,27 @@ class Station:
         This retains perturbations set on the elements
         """
         if new_gain is not None:
-            [
-                element.update_tile(
-                    new_pointing=new_pointing, new_gain=element.g - self.g + new_gain
-                )
-                for element in self.elements
-            ]
-            self.g = new_gain
+            if new_pointing is not None:
+                [
+                    element.update_tile(
+                        new_pointing=new_pointing,
+                        new_gain=element.g - self.g + new_gain,
+                    )
+                    for element in self.elements
+                ]
+                self.d = np.array(new_pointing).astype(float)
+            else:
+                [
+                    element.update_tile(new_gain=element.g - self.g + new_gain)
+                    for element in self.elements
+                ]
+            self.g = complex(new_gain)
         else:
             [
                 element.update_tile(new_pointing=new_pointing)
                 for element in self.elements
             ]
+            self.d = np.array(new_pointing).astype(float)
 
     def reset_elements(self):
         """
@@ -227,3 +253,23 @@ class Station:
         )
         station_response = sum(element_responses) / len(self.elements)
         return self.g * station_response
+
+    def ENU_rotation_matrix(self):
+        normal_vector = self.p / np.linalg.norm(self.p)
+
+        # We calculate local North as the projection of the ECEF north vector on the space orthogonal to
+        # the local normal vector
+        true_north = [0, 0, 1]
+        local_north = true_north - np.dot(true_north, normal_vector) * normal_vector
+        local_north /= np.linalg.norm(local_north)
+
+        # Local east is orthogonal to both the normal vector and local North
+        local_east = np.cross(normal_vector, local_north)
+
+        return np.array([local_east, local_north, normal_vector])
+
+    def set_ENU_positions(self):
+        [tile.set_ENU_positions(self.ENU_rotation_matrix()) for tile in self.elements]
+
+    def get_element_property(self, property):
+        return np.array([getattr(element, property) for element in self.elements])

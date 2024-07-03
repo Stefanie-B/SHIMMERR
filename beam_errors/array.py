@@ -16,6 +16,7 @@ c = 299792458  # m/s
     ),
     fastmath=True,
     nopython=True,
+    parallel=True,
 )
 def calculate_array_factor_contribution(positions, gains, k, pointing, directions):
     """
@@ -44,7 +45,7 @@ def calculate_array_factor_contribution(positions, gains, k, pointing, direction
     gains = np.ascontiguousarray(gains)
     pointing = np.ascontiguousarray(pointing)
     relative_pointing = directions - pointing[:, np.newaxis]
-    phase_delay = k * (positions @ relative_pointing)
+    phase_delay = k * np.dot(positions, relative_pointing)
     return gains[:, np.newaxis] * np.exp(1j * phase_delay)
 
 

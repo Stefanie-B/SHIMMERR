@@ -18,6 +18,27 @@ c = 299792458  # m/s
     nopython=True,
 )
 def calculate_array_factor_contribution(positions, gains, k, pointing, directions):
+    """
+    Calculates the array factor contributions of all elements and passes them separately (not summed).
+
+    Parameters
+    ----------
+    positions : ndarray
+        3xN array of element positions (must be floats)
+    gains : ndarray
+        N sized array of element gains (must be complex)
+    k : float
+        wave number
+    pointing : ndarray
+        3 sized array of pointing direction (unit length. must be float)
+    directions : ndarray
+        3xM array of directions to calculate the response in
+
+    Returns
+    -------
+    ndarray
+        N x M array with responses
+    """
     positions = np.ascontiguousarray(positions)
     directions = np.ascontiguousarray(directions)
     gains = np.ascontiguousarray(gains)
@@ -29,19 +50,16 @@ def calculate_array_factor_contribution(positions, gains, k, pointing, direction
 
 class Antenna:
     """
-    A class that represents the lowest level elements in the array. The element beam is not included, as it is common between
-    elements and therefore only computed once in the highest level.
+    A class that represents the lowest level elements in the array.
 
     Attributes
     -------------
     p: list
-        Contains the 3D position of the antenna in ETRS coordinates
+        Contains the 3D position of the antenna in ECEF (Earth-Centered Earth-Fixed) coordinates
+    p_ENU: list
+        Contains the 3D position of the antenna in ENU (East-North-Up) coordinates
     g: complex
         Complex gain of the element
-    s: complex
-        Complex pointing of the element (in principle computed as exp(j b), where b is the geometric phase delay)
-    w: complex
-        Weight within the array factor for this element. This is given by the product of the gain and the pointing
     """
 
     def __init__(self, position, gain=1.0 + 0j):
@@ -50,8 +68,6 @@ class Antenna:
         ----------
         position : list
             Contains the 3D position of the antenna in ETRS coordinates
-        pointing : complex, optional
-            Complex pointing of the element (in principle computed as exp(j b), where b is the geometric phase delay), by default 1 (zenith)
         gain : complex, optional
             Complex gain of the element, by default 1
         """
@@ -74,18 +90,31 @@ class Antenna:
 
     def update_antenna(self, new_gain=None):
         """
-        Updates antenna weight based on a new pointing vector or new gain
+        Updates antenna gain
         """
         if not isinstance(new_gain, numbers.Complex):
             raise TypeError(f"Gain of {new_gain} not a permitted complex number.")
-        if new_gain is not None:
-            self.g = complex(new_gain)
-
-    def update_common_settings(self, new_g, old_g=0 + 0j):
-        new_gain = self.g - old_g + new_g
-        self.update_antenna(new_gain)
+        self.g = complex(new_gain)
 
     def calculate_response(self, directions, frequency, mode="omnidirectional"):
+        """
+        Calculates the element response in directions.
+
+        Parameters
+        ----------
+        directions : ndarray
+            3xM array of unit length vectors that decribe the directions in ENU coordinates
+        frequency : float
+            Frequency of the measurement
+        mode : str, optional
+            sets the beam shape, by default "omnidirectional" (no directivity).
+
+        Returns
+        -------
+        ndarray
+            M length response
+        """
+        # Check if directions are fed correctly
         directions = np.array(directions).reshape(3, -1)
         if not np.allclose(
             np.linalg.norm(directions, axis=0), np.ones(directions.shape[1])
@@ -114,11 +143,13 @@ class Tile:
     Attributes
     -------------
     p: list
-        Contains the 3D position of the tile, defined as the mean of all element positions
+        Contains the 3D position of the tile in ECEF (Earth-Centered Earth-Fixed) coordinates
+    p_ENU: list
+        Contains the 3D position of the tile in ENU (East-North-Up) coordinates
     g: complex
-        Complex gain of the tile, shared between the elements (element gain = common gain + individual gain)
-    s: complex
-        Complex pointing of the tile (in principle computed as exp(j b), where b is the geometric phase delay)
+        Complex gain of the element
+    d: ndarray
+        Complex pointing of the tile (in ENU coordinates), where b is the geometric phase delay)
     """
 
     def __init__(self, positions, pointing, gain=1.0 + 0j):
@@ -126,9 +157,9 @@ class Tile:
         Parameters
         ----------
         positions : list
-            Contains the 3D position of the elements in ETRS coordinates
+            Contains the 3D position of the elements in ECEF coordinates
         pointing : complex, optional
-            Complex pointing of the tile (in principle computed as exp(j b), where b is the geometric phase delay), by default 1 (zenith)
+            Complex pointing of the tile (in ENU coordinates)
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
@@ -160,27 +191,55 @@ class Tile:
 
     def reset_elements(self):
         """
-        Resets all elements in the tile to the common gain and pointing (removing individual perturbations)
+        Resets all elements in the tile to have unit gain
         """
         [element.update_antenna(new_gain=1) for element in self.elements]
 
     def set_ENU_positions(self, rotation_matrix, station_position):
+        """
+        Calculates the ENU (East-North-Up) coordinates of all elements and the tile itself, based on the station rotation matrix from ECEF to ENU.
+        """
         self.p_ENU = np.dot(rotation_matrix, self.p)
         for element in self.elements:
             element.p_ENU = np.dot(rotation_matrix, element.p) - self.p_ENU
+
+        # We need to subtract the station position to make the station origin centered
         self.p_ENU -= np.dot(rotation_matrix, station_position)
 
     def get_element_property(self, property):
+        """
+        Helper function for the element list. Retrieves a property of the underlying elements.
+        """
         return np.array([getattr(element, property) for element in self.elements])
 
     def calculate_response(self, directions, frequency, antenna_beams=None):
+        """
+        Calculates the tile response or array factor in M directions.
+
+        Parameters
+        ----------
+        directions : ndarray
+            3xM array of unit length vectors that decribe the directions in ENU coordinates
+        frequency : float
+            Frequency of the measurement
+        antenna_beams : None or ndarray, optional
+            If set to None (default) this disables the element beams and only the array factor is returned. Otherwise, give an N x M array of element responses in the requested directions
+
+        Returns
+        -------
+        ndarray
+            M length response
+        """
         k = 2 * np.pi * frequency / c
 
+        # Check if directions are given in the correct format. We explicitly cast to floats to work with jit later
         directions = np.array(directions, dtype=float).reshape(3, -1)
         if not np.allclose(
             np.linalg.norm(directions, axis=0), np.ones(directions.shape[1])
         ):
             raise ValueError("The directions are not unit length")
+
+        # Calculate the gemetric response of the antenna elements (array factor)
         antenna_factors = calculate_array_factor_contribution(
             positions=self.get_element_property("p_ENU"),
             gains=self.get_element_property("g"),
@@ -189,6 +248,7 @@ class Tile:
             directions=directions,
         )
 
+        # Sum over elements with or without beam
         if antenna_beams is None:
             tile_beam = np.mean(antenna_factors, axis=0)
         else:
@@ -200,31 +260,46 @@ class Tile:
 
 
 class Station:
-    def __init__(self, positions, pointing=1.0 + 0j, gain=1.0 + 0j):
+    """
+    A class that represents the full station.
+
+    Attributes
+    -------------
+    p: list
+        Contains the 3D position of the station in ECEF (Earth-Centered Earth-Fixed) coordinates
+    p_ENU: list
+        Contains the 3D position of the station in ENU (East-North-Up) coordinates
+    g: complex
+        Complex gain of the element
+    d: ndarray
+        Complex pointing of the station (in ENU coordinates), where b is the geometric phase delay)
+    """
+
+    def __init__(self, positions, pointing=[0, 0, 1], gain=1.0 + 0j):
         """
         Parameters
         ----------
         positions : list
-            Contains the 3D position of the elements in ETRS coordinates
+            Contains the 3D position of the elements (tiles) in ECEF (Earth-Centered Earth-Fixed) coordinates
         pointing : complex, optional
-            Complex pointing of the tile (in principle computed as exp(j b), where b is the geometric phase delay), by default 1 (zenith)
+            Complex pointing of the station in ENU (East-North-Up) coordinates, default is [0,0,1] (zenith)
         gain : complex, optional
             Complex gain of the tile (shared by all elements), by default 1
         """
         self.d = np.array(pointing).astype(float)
         self.g = complex(gain)
 
-        # self.p = np.mean(np.array(positions), axis=(0, 1))
-
+        # Set the tiles
         self.elements = [
             Tile(per_tile_positions, self.d) for per_tile_positions in positions
         ]
         self.p = np.mean([element.p for element in self.elements], axis=0)
+
+        # Set the local coordinate frame (ENU)
         if self.p[0] == 0 and self.p[1] == 0:
             raise ValueError(
                 "Arrays pointing straight to the Earth's North pole are not implemented."
             )
-
         self.set_ENU_positions()
 
     def update_station(self, new_pointing=None, new_gain=None):
@@ -258,14 +333,17 @@ class Station:
 
     def reset_elements(self):
         """
-        Resets all elements in the tile to the common gain and pointing (removing individual perturbations)
+        Resets all elements in the tile to the common pointing and unit gain
         """
         [
-            element.update_tile(new_pointing=self.d, new_gain=self.g)
+            element.update_tile(new_pointing=self.d, new_gain=1)
             for element in self.elements
         ]
 
     def ENU_rotation_matrix(self):
+        """
+        Calculates the 3x3 matrix that transforms the coordinates from ECEF (Earth-Centered Earth-Fixed) to ENU (East-North-Up)
+        """
         normal_vector = self.p / np.linalg.norm(self.p)
 
         # We calculate local North as the projection of the ECEF north vector on the space orthogonal to
@@ -280,23 +358,48 @@ class Station:
         return np.array([local_east, local_north, normal_vector])
 
     def set_ENU_positions(self):
+        """
+        Sets ENU (East-North-Up) coordinates.
+        """
         [
             tile.set_ENU_positions(self.ENU_rotation_matrix(), self.p)
             for tile in self.elements
         ]
 
     def get_element_property(self, property):
+        """
+        Helper function for the element list. Retrieves a property of the underlying elements.
+        """
         return np.array([getattr(element, property) for element in self.elements])
 
     def calculate_array_factor(self, directions, frequency, tile_beams=None):
+        """
+        Calculates the station array factor in M directions.
+
+        Parameters
+        ----------
+        directions : ndarray
+            3xM array of unit length vectors that decribe the directions in ENU coordinates
+        frequency : float
+            Frequency of the measurement
+        tile_beams : None or ndarray, optional
+            If set to None (default) this disables the element beams and only the array factor is returned. Otherwise, give an N x M array of element responses in the requested directions
+
+        Returns
+        -------
+        ndarray
+            M length response
+        """
         k = 2 * np.pi * frequency / c
 
+        # Make sure the directions are fed correctly. They must be floats for the jit array factor to work
         directions = np.array(directions, dtype=float).reshape(3, -1)
         if not np.allclose(
             np.linalg.norm(directions, axis=0), np.ones(directions.shape[1])
         ):
             raise ValueError("The directions are not unit length")
 
+        # Calculate the gemetric response of the tile elements (array factor)
         tile_factors = calculate_array_factor_contribution(
             positions=self.get_element_property("p_ENU"),
             gains=self.get_element_property("g"),
@@ -305,6 +408,7 @@ class Station:
             directions=directions,
         )
 
+        # Sum over the tiles
         if tile_beams is None:
             station_beam = np.mean(tile_factors, axis=0)
         else:
@@ -315,9 +419,25 @@ class Station:
         return self.g * station_beam
 
     def calculate_response(self, directions, frequency, antenna_mode=None):
+        """
+        Calculates the full station beam in M directions.
 
+        Parameters
+        ----------
+        directions : ndarray
+            3xM array of unit length vectors that decribe the directions in ENU coordinates
+        frequency : float
+            Frequency of the measurement
+        antenna_mode : None or str, optional
+            If set to None (default) this disables the element beams and only the array factor is returned. Otherwise, give the requested antenna type.
+
+        Returns
+        -------
+        ndarray
+            M length response
+        """
         if antenna_mode is not None:
-
+            # Calculate antenna beams (in parallel for large arrays)
             def element_response_wrapper(tile, frequency, directions, antenna_mode):
                 antenna_beams = [
                     antenna.calculate_response(
@@ -339,6 +459,7 @@ class Station:
                 for tile in self.elements
             )
 
+            # Calculate the gemetric delays of the antennas to get the full tile beams
             tile_beams = [
                 tile.calculate_response(
                     directions=directions,
@@ -347,11 +468,15 @@ class Station:
                 )
                 for tile_number, tile in enumerate(self.elements)
             ]
+
         else:
+            # Array factor only option
             tile_beams = [
                 tile.calculate_response(frequency=frequency, directions=directions)
                 for tile in self.elements
             ]
+
+        # Combine the tiles with geometric delay
         station_beam = self.calculate_array_factor(
             directions=directions,
             frequency=frequency,

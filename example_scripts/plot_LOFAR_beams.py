@@ -94,5 +94,3 @@ plot_beam(
     beam_value_mode="full",
     cmap="jet",
 )
-
-# %%

@@ -6,10 +6,11 @@ from lofarantpos.db import LofarAntennaDatabase
 
 
 def load_array_from_file(filepath, pointing=1 + 0j):
-    array = []
+    array = {}
     constructing_station = []
     tile = []
     this_tile = None
+    station_name = None
     with open(filepath, "r") as f:
         for line in f:
             inputline = line.strip("\n")
@@ -23,10 +24,13 @@ def load_array_from_file(filepath, pointing=1 + 0j):
                     full_station = Station(
                         positions=constructing_station, pointing=pointing
                     )
-                    array.append(full_station)
+                    array[station_name] = full_station
 
                     constructing_station = []
                     tile = []
+                    station_name = None
+            elif station_name is None:
+                station_name = inputline
             else:
                 tile_identifier, x, y, z = inputline.split(",")
 
@@ -45,7 +49,7 @@ def load_array_from_file(filepath, pointing=1 + 0j):
     if len(constructing_station) > 0:
         # station done
         full_station = Station(positions=constructing_station, pointing=pointing)
-        array.append(full_station)
+        array[station_name] = full_station
 
     return array
 
@@ -148,7 +152,7 @@ def load_LOFAR(pointing=1 + 0j, mode="EoR"):
         47,
     ]
 
-    array = []
+    array = {}
     for station_name in station_names:
 
         dipole_elements_pqr = db.hba_dipole_pqr(station_name)
@@ -175,6 +179,6 @@ def load_LOFAR(pointing=1 + 0j, mode="EoR"):
 
         # create and add station object
         station = Station(station_split_in_tiles)
-        array.append(station)
+        array[station_name] = station
 
     return array

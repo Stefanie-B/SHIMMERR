@@ -1,78 +1,5 @@
 import numpy as np
-from numba import jit, complex128, float64
 from matplotlib import pyplot as plt
-
-c = 299792458  # m/s
-
-
-@jit(
-    complex128[:, :](
-        float64[:, :],
-        complex128[:],
-        float64,
-        float64[:],
-        float64[:, :],
-    ),
-    fastmath=True,
-    nopython=True,
-)
-def calculate_array_factor_contribution(positions, gains, k, pointing, directions):
-    positions = np.ascontiguousarray(positions)
-    directions = np.ascontiguousarray(directions)
-    gains = np.ascontiguousarray(gains)
-    pointing = np.ascontiguousarray(pointing)
-    relative_pointing = directions - pointing[:, np.newaxis]
-    phase_delay = k * (positions @ relative_pointing)
-    return gains[:, np.newaxis] * np.exp(1j * phase_delay)
-
-
-def calculate_element_beam(element, frequency, directions, antenna_mode):
-    antenna_beam = [
-        element.calculate_response(
-            direction=directions[:, i], frequency=frequency, mode=antenna_mode
-        )
-        for i in range(directions.shape[1])
-    ]
-
-    antenna_beam = np.array(antenna_beam)
-    return antenna_beam
-
-
-def calculate_tile_beam(tile, frequency, directions):
-    k = 2 * np.pi * frequency / c
-
-    antenna_factors = calculate_array_factor_contribution(
-        positions=tile.get_element_property("p_ENU"),
-        gains=tile.get_element_property("g"),
-        k=k,
-        pointing=tile.d,
-        directions=directions,
-    )
-
-    tile_beam = np.mean(antenna_factors, axis=0)
-
-    return tile_beam
-
-
-def calculate_station_beam(station, frequency, directions, tile_beams=None):
-    k = 2 * np.pi * frequency / c
-
-    tile_factors = calculate_array_factor_contribution(
-        positions=station.get_element_property("p_ENU"),
-        gains=station.get_element_property("g"),
-        k=k,
-        pointing=station.d,
-        directions=directions,
-    )
-
-    if tile_beams is None:
-        station_beam = np.mean(tile_factors, axis=0)
-    else:
-        tile_beams = np.array(tile_beams)
-        tile_responses = tile_beams * tile_factors
-        station_beam = np.mean(tile_responses, axis=0)
-
-    return station_beam
 
 
 def create_beam_plot(
@@ -135,7 +62,6 @@ def plot_beam(
     # We calculate all directions for a single element instead of the other way around
     # because this function uses a lot of directions (more than the expected number of elements)
     # Set all east, north, up coordinates
-    station.set_ENU_positions()
 
     altitude_sweep = np.linspace(0, np.pi / 2, n_altitude)
     azimuth_sweep = np.linspace(0, 2 * np.pi, n_azimuth)
@@ -152,56 +78,36 @@ def plot_beam(
     )
 
     if beam_value_mode == "full":
-        tile_beams = [
-            calculate_tile_beam(tile=tile, frequency=frequency, directions=directions)
-            for tile in station.elements
-        ]
-        station_beam = calculate_station_beam(
-            station=station,
-            frequency=frequency,
-            directions=directions,
-            tile_beams=tile_beams,
+        beam = station.calculate_response(
+            frequency=frequency, directions=directions, antenna_mode=antenna_mode
         )
-        antenna_beam = calculate_element_beam(
-            element=station.elements[tile_number].elements[antenna_number],
-            frequency=frequency,
-            directions=directions,
-            antenna_mode=antenna_mode,
-        )
-        beam = station_beam * antenna_beam
         cbar_title_value = "Full "
     elif beam_value_mode == "tile":
-        beam = calculate_tile_beam(
-            tile=station.elements[tile_number],
+        beam = station.elements[tile_number].calculate_response(
             frequency=frequency,
             directions=directions,
         )
         cbar_title_value = "Tile "
     elif beam_value_mode == "station":
-        beam = calculate_station_beam(
-            station=station,
+        beam = station.calculate_array_factor(
             frequency=frequency,
             directions=directions,
         )
         cbar_title_value = "Station "
     elif beam_value_mode == "array_factor":
-        tile_beams = [
-            calculate_tile_beam(tile=tile, frequency=frequency, directions=directions)
-            for tile in station.elements
-        ]
-        beam = calculate_station_beam(
-            station=station,
-            frequency=frequency,
-            directions=directions,
-            tile_beams=tile_beams,
+        beam = station.calculate_response(
+            frequency=frequency, directions=directions, antenna_mode=None
         )
         cbar_title_value = "Array factor "
     elif beam_value_mode == "element":
-        beam = calculate_element_beam(
-            element=station.elements[tile_number].elements[antenna_number],
-            frequency=frequency,
-            directions=directions,
-            antenna_mode=antenna_mode,
+        beam = (
+            station.elements[tile_number]
+            .elements[antenna_number]
+            .calculate_response(
+                frequency=frequency,
+                directions=directions,
+                mode=antenna_mode,
+            )
         )
         cbar_title_value = "Element "
     else:

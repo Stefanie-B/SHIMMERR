@@ -5,8 +5,8 @@ import pytest
 @pytest.mark.parametrize(
     "path, number_of_stations, station_name, number_of_tiles, tile_number, number_of_dipoles, dipole_number, position",
     [
-        ("files/arrays/single_baseline.txt", 2, "A", 1, 0, 1, 0, [0, 0, -1]),
-        ("files/arrays/single_baseline.txt", 2, "B", 1, 0, 1, 0, [0, 0, 1]),
+        ("files/arrays/single_baseline.txt", 2, "A", 1, 0, 1, 0, [1e8, 0, -1]),
+        ("files/arrays/single_baseline.txt", 2, "B", 1, 0, 1, 0, [1e8, 0, 1]),
     ],
 )
 def test_load_array_from_file(

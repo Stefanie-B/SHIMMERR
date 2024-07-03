@@ -36,13 +36,18 @@ def test_Antenna_init(args, expected, expected_raises):
         ([[0, 0, 0], 1], [[0, 0, 1], 150e6], 1),
         ([[0, 0, 0], 5j], [[0, 0, 1], 150e6], 5j),
         ([[0, 0, 0], 5j], [[0, 1, 0], 150e6], 5j),
+        (
+            [[0, 0, 0], 5j],
+            [[0, 1 / np.sqrt(2), 1 / np.sqrt(2)], 150e6, "simplified"],
+            5j * np.exp(-2 * (np.pi / 4) ** 3),
+        ),
     ],
 )
 def test_Antenna_response(args_init, args_response, expected):
     from beam_errors.array import Antenna
 
     test_antenna = Antenna(*args_init)
-    npt.assert_equal(test_antenna.calculate_response(*args_response), expected)
+    npt.assert_almost_equal(test_antenna.calculate_response(*args_response), expected)
 
 
 @pytest.mark.parametrize(
@@ -95,7 +100,7 @@ def test_Tile_init(args, expected, expected_raises):
     [
         (
             [[[-1, -1, 0], [1, 1, 0]], [0, 0, 1], 2],
-            [[0, 0, 1], 150e6, "omnidirectional", 2],
+            [[0, 0, 1], 150e6, None],
             2,
         ),
         (
@@ -105,7 +110,7 @@ def test_Tile_init(args, expected, expected_raises):
         ),
         (
             [[[-1, 0, 0], [1, 0, 0]], [0, 0, 1]],
-            [[np.sqrt(2) / 2, 0, np.sqrt(2) / 2], 150e6, "omnidirectional", 1],
+            [[np.sqrt(2) / 2, 0, np.sqrt(2) / 2], 150e6, 1],
             (
                 np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
                 + np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
@@ -114,10 +119,10 @@ def test_Tile_init(args, expected, expected_raises):
         ),
         (
             [[[-1, 0, 0], [1, 0, 0]], [np.sqrt(2) / 2, 0, np.sqrt(2) / 2]],
-            [[0, 0, 1], 150e6, "omnidirectional", 1],
+            [[0, 0, 1], 150e6, 2],
             (
-                np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
-                + np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+                2 * np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
+                + 2 * np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
             )
             / 2,
         ),
@@ -127,6 +132,9 @@ def test_Tile_response(args_init, args_response, expected):
     from beam_errors.array import Tile
 
     test_tile = Tile(*args_init)
+    test_tile.set_ENU_positions(
+        np.eye(3), np.array([0, 0, 0])
+    )  # Since the tile is not part of a station it doesn't have an ENU position yet
     npt.assert_almost_equal(test_tile.calculate_response(*args_response), expected, 5)
 
 
@@ -183,18 +191,18 @@ def test_Station_init(args, expected, expected_raises):
     "args_init, args_response, expected",
     [
         (
-            [[[[-1, -1, 0], [1, 1, 0]]], [0, 0, 1], 2],
-            [[0, 0, 1], 150e6, "omnidirectional", 2],
+            [[[[-1.5, -1.5, 0], [0.5, 0.5, 0]]], [0, 0, 1], 2],
+            [[0, 0, 1], 150e6, "omnidirectional"],
             2,
         ),
         (
-            [[[[-1, 0, 0], [1, 0, 0]]], [0, np.sqrt(2) / 2, np.sqrt(2) / 2]],
-            [[0, 0, 1], 150e6],
+            [[[[-1.1, 0, 0], [0.9, 0, 0]]], [0, np.sqrt(2) / 2, np.sqrt(2) / 2]],
+            [[0, np.sqrt(2) / 2, np.sqrt(2) / 2], 150e6],
             1,
         ),
         (
-            [[[[-1, 0, 0], [1, 0, 0]]], [np.sqrt(2) / 2, 0, np.sqrt(2) / 2]],
-            [[0, 0, 1], 150e6, "omnidirectional", 1],
+            [[[[1e8, -1, 0], [1e8, 1, 0]]], [0, 0, 1]],
+            [[1 / np.sqrt(2), 0, 1 / np.sqrt(2)], 150e6, "omnidirectional"],
             (
                 np.exp(1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
                 + np.exp(-1j * np.sqrt(2) * np.pi * 150e6 / 299792458)
@@ -203,7 +211,7 @@ def test_Station_init(args, expected, expected_raises):
         ),
         (
             [[[[-1, -1, 0], [-1, 1, 0]], [[1, 1, 0]], [[1, -1, 0]]], [0, 0, 1], 4j],
-            [[0, 0, 1], 150e6, "omnidirectional", 4],
+            [[0, 0, 1], 150e6, "simplified"],
             4j,
         ),
     ],

@@ -7,15 +7,10 @@ from beam_errors.visualization import plot_beam
 from beam_errors.load_array import load_LOFAR
 import numpy as np
 
-array = load_LOFAR(mode="international")
-# International station (SE607)
-station = array[74]
+array = load_LOFAR(mode="EoR")
 
 # Core Station (CS001HBA0)
-station = array[0]
-
-# Remote Station (RS106)
-station = array[60]
+station = array["CS002HBA0"]
 
 # Example pointings ENU
 station.update_station(new_pointing=[0, 0, 1])  # Zenith
@@ -94,3 +89,5 @@ plot_beam(
     beam_value_mode="full",
     cmap="jet",
 )
+
+# %%

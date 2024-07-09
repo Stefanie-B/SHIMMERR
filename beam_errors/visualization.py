@@ -248,9 +248,9 @@ def plot_spectrotemporal_beam(
             antenna_number,
         )
 
-    F, T = np.meshgrid(
+    T, F = np.meshgrid(
+        np.arange(number_of_timeslots) * time_resolution / 60,
         frequencies * 1e-6,
-        np.arange(0, number_of_timeslots * time_resolution / 60, time_resolution / 60),
     )
 
     ## Create plot
@@ -261,9 +261,9 @@ def plot_spectrotemporal_beam(
 
     fig, ax = plt.subplots(ncols=1, nrows=1)
     im = ax.pcolormesh(
-        F,  # this brings the North up rather than right
         T,
-        beam.T,
+        F,
+        beam,
         vmin=vmin,
         vmax=vmax,
         cmap=cmap,
@@ -276,6 +276,4 @@ def plot_spectrotemporal_beam(
     cbar.set_label(cbar_title)
     ax.set_xlabel(r"Time since start of observation (min)")
     ax.set_ylabel(r"Frequency (MHz)")
-    ax.set_xticks([])
-    ax.set_yticks([])
     fig.show()

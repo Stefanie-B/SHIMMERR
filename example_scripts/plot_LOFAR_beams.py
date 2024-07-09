@@ -162,6 +162,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="full",
     vmin=None,
+    number_of_timeslots=1000,
 )
 
 # %%

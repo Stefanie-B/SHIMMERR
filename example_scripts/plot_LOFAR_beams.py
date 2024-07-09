@@ -24,6 +24,14 @@ rotation_matrix = station.ENU_rotation_matrix()
 NCP_ENU = np.array([0, 0, 1]) @ rotation_matrix.T
 station.update_station(new_pointing=NCP_ENU)
 
+# Cas and Cyg
+time = "2024-07-04T19:23:00"
+cas_coordinates = station.radec_to_ENU(
+    right_ascension=350.8575, declination=58.148167, time=time
+)  # Right Ascension 23h 23m 25.8s, Declination +58º 8' 53.4''
+cyg_coordinates = station.radec_to_ENU(
+    right_ascension=16.135, declination=40.733889, time=time
+)  # Right Ascension 19h 59m 28.4s, Declination +40° 44' 2.1''
 
 # Element beam
 plot_beam(
@@ -36,6 +44,7 @@ plot_beam(
     beam_plot_mode="power",
     beam_value_mode="element",
     cmap="jet",
+    points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
 # Tile beam (array factor only)
@@ -49,6 +58,7 @@ plot_beam(
     beam_plot_mode="power",
     beam_value_mode="tile",
     cmap="jet",
+    points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
 # Station beam (array factor only)
@@ -62,6 +72,7 @@ plot_beam(
     beam_plot_mode="power",
     beam_value_mode="station",
     cmap="jet",
+    points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
 # Station and Tile beam (array factor only)
@@ -75,6 +86,7 @@ plot_beam(
     beam_plot_mode="power",
     beam_value_mode="array_factor",
     cmap="jet",
+    points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
 # Full beam
@@ -88,6 +100,7 @@ plot_beam(
     beam_plot_mode="power",
     beam_value_mode="full",
     cmap="jet",
+    points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
 # %%

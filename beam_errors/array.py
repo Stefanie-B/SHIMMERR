@@ -1,9 +1,11 @@
 import numpy as np
 import numbers
 from joblib import Parallel, delayed
-from numba import jit, complex128, float64
-
-c = 299792458  # m/s
+from numba import jit, complex128, float64, prange
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+from astropy.time import Time
+from astropy import constants as const
+from astropy import units as u
 
 
 @jit(
@@ -44,9 +46,16 @@ def calculate_array_factor_contribution(positions, gains, k, pointing, direction
     directions = np.ascontiguousarray(directions)
     gains = np.ascontiguousarray(gains)
     pointing = np.ascontiguousarray(pointing)
-    relative_pointing = directions - pointing[:, np.newaxis]
+
+    relative_pointing = np.empty(directions.shape, dtype=np.float64)
+    for i in prange(directions.shape[0]):
+        relative_pointing[i, :] = directions[i, :] - pointing[i]
     phase_delay = k * np.dot(positions, relative_pointing)
-    return gains[:, np.newaxis] * np.exp(1j * phase_delay)
+
+    array_factor_contribution = np.empty(phase_delay.shape, dtype=np.complex128)
+    for i in prange(phase_delay.shape[0]):
+        array_factor_contribution[i, :] = gains[i] * np.exp(1j * phase_delay[i, :])
+    return array_factor_contribution
 
 
 class Antenna:
@@ -231,7 +240,7 @@ class Tile:
         ndarray
             M length response
         """
-        k = 2 * np.pi * frequency / c
+        k = 2 * np.pi * frequency / const.c.value
 
         # Check if directions are given in the correct format. We explicitly cast to floats to work with jit later
         directions = np.array(directions, dtype=float).reshape(3, -1)
@@ -391,7 +400,7 @@ class Station:
         ndarray
             M length response
         """
-        k = 2 * np.pi * frequency / c
+        k = 2 * np.pi * frequency / const.c.value
 
         # Make sure the directions are fed correctly. They must be floats for the jit array factor to work
         directions = np.array(directions, dtype=float).reshape(3, -1)
@@ -485,3 +494,50 @@ class Station:
         )
 
         return station_beam
+
+    def radec_to_ENU(self, right_ascension, declination, time):
+        """
+        _summary_
+
+        Parameters
+        ----------
+        station : _type_
+            _description_
+        right_ascension : _type_
+            _description_
+        declination : _type_
+            _description_
+        time : str
+            Observing time in UTC format
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
+        # Get the source position, time and station position as astropy objects
+        sky_coord = SkyCoord(
+            ra=right_ascension * u.deg, dec=declination * u.deg, frame="icrs"
+        )
+        obs_time = Time(time)
+        station_location = EarthLocation(
+            x=self.p[0] * u.m, y=self.p[1] * u.m, z=self.p[2] * u.m
+        )
+
+        # Transform to AltAz frame
+        altaz = sky_coord.transform_to(
+            AltAz(obstime=obs_time, location=station_location)
+        )
+        altitude = altaz.alt.rad
+        azimuth = altaz.az.rad
+
+        # Exception forsources beneath the horizon
+        if altitude < 0:
+            return np.array([np.nan, np.nan, np.nan])
+
+        # Convert AltAz to ENU
+        east = np.cos(altitude) * np.sin(azimuth)
+        north = np.cos(altitude) * np.cos(azimuth)
+        up = np.sin(altitude)
+
+        return np.array([east, north, up])

@@ -223,3 +223,37 @@ def test_Station_response(args_init, args_response, expected):
     npt.assert_almost_equal(
         test_station.calculate_response(*args_response), expected, 5
     )
+
+
+@pytest.mark.parametrize(
+    "args_init, args_location, expected",
+    [
+        (  # Vega, Indian Ocean
+            [[[[2148527, 5903030, -1100249]]]],
+            [279.44875, 38.8064444444, "2024-07-09T22:42:33"],
+            [-0.6715, 0.6821, 0.281194],
+        ),
+        (  # Vega, Hidden Lake Territorial Park
+            [[[[-1184057, -2700745, 5636532]]]],
+            [279.44875, 38.8064444444, "2024-01-10T10:59:00"],
+            [0.6821, 0.6229, 0.382993],
+        ),
+        (  # Alpheratz, South Africa
+            [[[[5069019, 2362822, -3056109]]]],
+            [2.42083333333, 29.2311388889, "2024-12-05T17:59:00"],
+            [-0.1114, 0.8449, 0.523269],
+        ),
+        (  # Shedar down, South Africa
+            [[[[5069019, 2362822, -3056109]]]],
+            [10.4870833333, 56.6749166667, "2024-10-10T03:43:00"],
+            [np.nan, np.nan, np.nan],
+        ),
+    ],
+)
+def test_radec_to_ENU(args_init, args_location, expected):
+    from beam_errors.array import Station
+
+    test_station = Station(*args_init)
+    npt.assert_array_almost_equal(
+        test_station.radec_to_ENU(*args_location), expected, 2
+    )

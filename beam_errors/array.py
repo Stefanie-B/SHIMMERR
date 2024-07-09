@@ -497,23 +497,21 @@ class Station:
 
     def radec_to_ENU(self, right_ascension, declination, time):
         """
-        _summary_
+        Calculates a sky direction in the stations ENU frame at a given time
 
         Parameters
         ----------
-        station : _type_
-            _description_
-        right_ascension : _type_
-            _description_
-        declination : _type_
-            _description_
+        right_ascension : float
+            RA in deg
+        declination : float
+            dec in deg
         time : str
-            Observing time in UTC format
+            Observing time in UTC format (YYYY-MM-DDThh:mm:ss, example: 2024-07-04T19:25:00)
 
         Returns
         -------
-        _type_
-            _description_
+        ndarray
+            source direction unit vector in ENU
         """
         # Get the source position, time and station position as astropy objects
         sky_coord = SkyCoord(

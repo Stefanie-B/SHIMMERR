@@ -198,12 +198,18 @@ def plot_spectrotemporal_beam(
     ----------
     station : Station object
         Station
-    n_altitude : int
-        Number of points in the altitude sweep (more is higher resolution)
-    n_azimuth : int
-        Number of points in the azimuth sweep (similar to n_altitude)
-    frequency : float or int, optional
-        measurement frequency to plot the beam for, by default 150e6
+    right_ascention : float
+        Target RA in degrees
+    declination : float
+        Target dec in degrees
+    frequencies : ndarray, optional
+        channel central frequencies to plot the beam for in Hz. Default is 195kHz channels between 134.1 and 146.7 MHz (LOFAR-EoR redshift bin 2).
+    utc_starttim : str
+        Observing time in UTC format (YYYY-MM-DDThh:mm:ss. Default is "2024-07-04T21:35:00"
+    time_resolution : float
+        Time resolution at which to plot the beam in seconds. Default is 2.
+    number_of_timeslots : int
+        Number of timeslots (of size time_resolution) to plot. Default is 400
     antenna_mode : None or str, optional
         Gives the shape of the element beam, by default None
     beam_plot_mode : str, optional
@@ -214,8 +220,6 @@ def plot_spectrotemporal_beam(
         Which tile in the station to display for tile/element option, by default 0
     antenna_number : int, optional
         Which element in the chosen tile to display (for element option), by default 0
-    points_of_interest : list, optional
-        list of directions that should be highlighted in the plot. For example the pointing direction or a bright source, by default [] (no highlighted points)
     """
 
     # Find the direction unit vectors for the requested sweep ranges

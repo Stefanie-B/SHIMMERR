@@ -3,7 +3,7 @@ import os
 
 os.chdir("..")
 
-from beam_errors.visualization import plot_beam
+from beam_errors.visualization import plot_spatial_beam, plot_spectrotemporal_beam
 from beam_errors.load_array import load_LOFAR
 import numpy as np
 
@@ -33,8 +33,11 @@ cyg_coordinates = station.radec_to_ENU(
     right_ascension=16.135, declination=40.733889, time=time
 )  # Right Ascension 19h 59m 28.4s, Declination +40° 44' 2.1''
 
+
+# %%
+
 # Element beam
-plot_beam(
+plot_spatial_beam(
     station,
     n_altitude=250,
     n_azimuth=500,
@@ -48,7 +51,7 @@ plot_beam(
 )
 
 # Tile beam (array factor only)
-plot_beam(
+plot_spatial_beam(
     station,
     n_altitude=250,
     n_azimuth=500,
@@ -62,7 +65,7 @@ plot_beam(
 )
 
 # Station beam (array factor only)
-plot_beam(
+plot_spatial_beam(
     station,
     n_altitude=250,
     n_azimuth=500,
@@ -76,7 +79,7 @@ plot_beam(
 )
 
 # Station and Tile beam (array factor only)
-plot_beam(
+plot_spatial_beam(
     station,
     n_altitude=250,
     n_azimuth=500,
@@ -90,7 +93,7 @@ plot_beam(
 )
 
 # Full beam
-plot_beam(
+plot_spatial_beam(
     station,
     n_altitude=250,
     n_azimuth=500,
@@ -101,6 +104,64 @@ plot_beam(
     beam_value_mode="full",
     cmap="jet",
     points_of_interest=[cas_coordinates, cyg_coordinates],
+)
+
+# %%
+
+# Element beam
+plot_spectrotemporal_beam(
+    station,
+    right_ascension=350.8575,
+    declination=58.148167,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="element",
+    vmin=None,
+)
+
+# Tile beam (array factor only)
+plot_spectrotemporal_beam(
+    station,
+    right_ascension=350.8575,
+    declination=58.148167,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="tile",
+    vmin=None,
+)
+
+
+# Station beam (array factor only)
+plot_spectrotemporal_beam(
+    station,
+    right_ascension=350.8575,
+    declination=58.148167,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="station",
+    vmin=None,
+)
+
+# Station and Tile beam (array factor only)
+plot_spectrotemporal_beam(
+    station,
+    right_ascension=350.8575,
+    declination=58.148167,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="array_factor",
+    vmin=None,
+)
+
+# Full beam
+plot_spectrotemporal_beam(
+    station,
+    right_ascension=350.8575,
+    declination=58.148167,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="full",
+    vmin=None,
 )
 
 # %%

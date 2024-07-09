@@ -3,7 +3,7 @@ import numbers
 from joblib import Parallel, delayed
 from numba import jit, complex128, float64, prange
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 from astropy import constants as const
 from astropy import units as u
 
@@ -495,7 +495,7 @@ class Station:
 
         return station_beam
 
-    def radec_to_ENU(self, right_ascension, declination, time):
+    def radec_to_ENU(self, right_ascension, declination, time, temporal_offset=None):
         """
         Calculates a sky direction in the stations ENU frame at a given time
 
@@ -507,6 +507,8 @@ class Station:
             dec in deg
         time : str
             Observing time in UTC format (YYYY-MM-DDThh:mm:ss, example: 2024-07-04T19:25:00)
+        temporal_offset : None or float
+            Time offset from given time in s.
 
         Returns
         -------
@@ -518,6 +520,8 @@ class Station:
             ra=right_ascension * u.deg, dec=declination * u.deg, frame="icrs"
         )
         obs_time = Time(time)
+        if temporal_offset is not None:
+            obs_time += TimeDelta(temporal_offset, format="sec")
         station_location = EarthLocation(
             x=self.p[0] * u.m, y=self.p[1] * u.m, z=self.p[2] * u.m
         )

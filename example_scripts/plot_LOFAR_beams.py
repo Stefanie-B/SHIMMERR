@@ -117,6 +117,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="element",
     vmin=None,
+    number_of_timeslots=1800,
 )
 
 # Tile beam (array factor only)
@@ -128,6 +129,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="tile",
     vmin=None,
+    number_of_timeslots=1800,
 )
 
 
@@ -140,6 +142,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="station",
     vmin=None,
+    number_of_timeslots=1800,
 )
 
 # Station and Tile beam (array factor only)
@@ -151,6 +154,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="array_factor",
     vmin=None,
+    number_of_timeslots=1800,
 )
 
 # Full beam
@@ -162,7 +166,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="full",
     vmin=None,
-    number_of_timeslots=1000,
+    number_of_timeslots=1800,
 )
 
 # %%

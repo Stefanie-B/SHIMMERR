@@ -203,7 +203,17 @@ class Tile:
             for element, value in zip(self.elements, values)
         ]
 
-    def break_number_of_elements(self, rng, n):
+    def _break_number_of_elements(self, rng, n):
+        """
+        Randomly breaks a number of elements in the tile
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Generator for determining the elements to be broken
+        n : int
+            Number of elements to be broken
+        """
         if n < 0:
             warnings.warn(
                 "You are trying to break a negative number of elements in this tile. I am breaking none."
@@ -350,6 +360,12 @@ class Station:
 
     @staticmethod
     def _draw_gaussian_complex_number(rng, sigma):
+        """
+        Draws a random ccomplex number from a normal distribution.
+        -------
+        _type_
+            _description_
+        """
         real, imag = rng.standard_normal(2)
         number = (
             (real + 1j * imag) * sigma / np.sqrt(2)
@@ -357,6 +373,18 @@ class Station:
         return number
 
     def add_random_gain_drift(self, sigma_tile, sigma_antenna, seed=None):
+        """
+        Add complex Gaussian zero mean noise to the gains.
+
+        Parameters
+        ----------
+        sigma_tile : float
+            Standard deviation of the noise added on a tile level
+        sigma_antenna : float
+            Standard deviation of the noise added on an antenna level
+        seed : None or int, optional
+            Seed of the random generator. Set by an integer for reproducability, by default None
+        """
         rng = np.random.default_rng(seed=seed)
         for tile in self.elements:
             tile.g += self._draw_gaussian_complex_number(rng, sigma_tile)

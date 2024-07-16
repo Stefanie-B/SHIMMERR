@@ -461,7 +461,7 @@ class Station:
         else:
             raise ValueError("Other modes not yet implemented.")
         [
-            tile.break_number_of_elements(rng, n)
+            tile._break_number_of_elements(rng, n)
             for n, tile in zip(number_of_broken_elements, self.elements)
         ]
 

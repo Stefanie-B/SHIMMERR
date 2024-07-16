@@ -2,6 +2,7 @@ import numpy as np
 import numbers
 from joblib import Parallel, delayed
 from numba import jit, complex128, float64
+import warnings
 
 c = 299792458  # m/s
 
@@ -173,23 +174,6 @@ class Tile:
 
         self.p_ENU = None
 
-    def update_tile(self, new_pointing=None, new_gain=None):
-        """
-        Updates common tile gain or pointing.
-
-        The new gains of the elements are set as:
-        new_element_gain = old_element_gain - old_common_gain + new_common_gain
-        This retains perturbations set on the elements
-        """
-        if new_gain is not None:
-            [
-                element.update_common_settings(new_g=new_gain, old_g=self.g)
-                for element in self.elements
-            ]
-            self.g = complex(new_gain)
-        if new_pointing is not None:
-            self.d = np.array(new_pointing).astype(float)
-
     def reset_elements(self):
         """
         Resets all elements in the tile to have unit gain
@@ -212,6 +196,35 @@ class Tile:
         Helper function for the element list. Retrieves a property of the underlying elements.
         """
         return np.array([getattr(element, property) for element in self.elements])
+
+    def set_element_property(self, property, values):
+        [
+            setattr(element, property, value)
+            for element, value in zip(self.elements, values)
+        ]
+
+    def break_number_of_elements(self, rng, n):
+        if n < 0:
+            warnings.warn(
+                "You are trying to break a negative number of elements in this tile. I am breaking none."
+            )
+            return
+        if n == 0:
+            return
+        if n >= len(self.elements):
+            warnings.warn(
+                "You are trying to break all elements in the tile (or more). I am breaking all."
+            )
+            self.set_element_property("g", [0 for _ in self.elements])
+            return
+
+        # Find broken indices
+        element_indices = list(range(len(self.elements)))
+        rng.shuffle(element_indices)
+        broken_elements = element_indices[:n]
+
+        for i in broken_elements:
+            self.elements[i].g = 0
 
     def calculate_response(self, directions, frequency, antenna_beams=None):
         """
@@ -311,34 +324,117 @@ class Station:
         """
         if new_gain is not None:
             if new_pointing is not None:
-                [
-                    element.update_tile(
-                        new_pointing=new_pointing,
-                        new_gain=element.g - self.g + new_gain,
-                    )
-                    for element in self.elements
-                ]
+                self.set_element_property(
+                    "d", np.repeat(new_pointing, len(self.elements))
+                )
+                self.set_element_property(
+                    "g", [element.g - self.g + new_gain for element in self.elements]
+                )
                 self.d = np.array(new_pointing).astype(float)
             else:
-                [
-                    element.update_tile(new_gain=element.g - self.g + new_gain)
-                    for element in self.elements
-                ]
+                self.set_element_property(
+                    "g", [element.g - self.g + new_gain for element in self.elements]
+                )
             self.g = complex(new_gain)
         else:
-            [
-                element.update_tile(new_pointing=new_pointing)
-                for element in self.elements
-            ]
+            self.set_element_property("d", np.repeat(new_pointing, len(self.elements)))
             self.d = np.array(new_pointing).astype(float)
 
     def reset_elements(self):
         """
         Resets all elements in the tile to the common pointing and unit gain
         """
+        self.set_element_property("d", np.repeat(self.d, len(self.elements)))
+        self.set_element_property("g", np.repeat(1, len(self.elements)))
+        [tile.reset_elements() for tile in self.elements]
+
+    @staticmethod
+    def _draw_gaussian_complex_number(rng, sigma):
+        real, imag = rng.standard_normal(2)
+        number = (
+            (real + 1j * imag) * sigma / np.sqrt(2)
+        )  # because we add 2 random numbers
+        return number
+
+    def add_random_gain_drift(self, sigma_tile, sigma_antenna, seed=None):
+        rng = np.random.default_rng(seed=seed)
+        for tile in self.elements:
+            tile.g += self._draw_gaussian_complex_number(rng, sigma_tile)
+            antenna_gains = [
+                element.g + self._draw_gaussian_complex_number(rng, sigma_antenna)
+                for element in tile.elements
+            ]
+            tile.set_element_property("g", antenna_gains)
+
+    def add_spatial_random_gain_drift(self, sigma_tile, sigma_antenna, seed=None):
+        pass
+
+    def break_elements(self, mode="maximum", number=0, seed=None):
+        """
+        Breaks elements within the tiles of the array (by setting their gains to 0). Set the seed for reproducability, but be aware that a different seed should be used for different stations to guarantee randomness.
+
+        Parameters
+        ----------
+        mode : str, optional
+            Sets the way in which elements are broken, by default "maximum"
+            maximum: Uniformly breaks elements up to a maximum number. If higher than the number of elements per tile, the full tile will be flagged more often (numbers between #elements and max are shifted to max)
+            number: Breaks the specified number of elements. If higher than the number of antennas in a tile, all antennas are broken. Rounds to nearest number of elements per tile (so 10% of 16 elements = 1.6 elements --> 2 elements flagged in every tile)
+            percentage: Same as number but with a percentage.
+            typical: Breaks elements according to a normal(number, number) distribution, such that on average <number> elements are broken.
+            typical_percentage: the same as above but with a percentage.
+        number : int, optional
+            Number that controls how many elements are broken (so maximum, percentage, etc.), by default 0
+        seed : int, optional
+            seed for the random number generator that controls how many and which elements are broken, by default None (initialize randomly every call)
+
+        Raises
+        ------
+        ValueError
+            either for a negative number of elements (not physically possible) or for an unknown mode
+        """
+        if number < 0:
+            raise ValueError("number should be non-negative")
+        rng = np.random.default_rng(seed=seed)
+        if mode == "maximum":
+            number_of_broken_elements = rng.integers(
+                low=0, high=number + 1, size=len(self.elements)
+            )
+        elif mode == "number":
+            number_of_broken_elements = [number for _ in self.elements]
+        elif mode == "percentage":
+            number_of_broken_elements = [
+                int(np.rint(number / 100 * len(tile.elements)))
+                for tile in self.elements
+            ]
+        elif mode == "typical":
+            # Note that this may trigger warnings as the drawn random number can be outside the number of elements in a tile
+            normal_distribution = rng.standard_normal(
+                size=len(self.elements)
+            )  # N(0, 1)
+            number_of_broken_elements = np.rint(
+                normal_distribution * np.sqrt(number) + number
+            ).astype(
+                int
+            )  # N(number, number)
+        elif mode == "typical_percentage":
+            # Note that this may trigger warnings as the drawn random number can be outside the number of elements in a tile
+            normal_distribution = rng.standard_normal(
+                size=len(self.elements)
+            )  # similar to above, but now we multiply with a percentage per tile
+            number_of_broken_elements = [
+                int(
+                    np.rint(
+                        x * np.sqrt(number * len(tile.elements) / 100)
+                        + number * len(tile.elements) / 100
+                    )
+                )
+                for x, tile in zip(normal_distribution, self.elements)
+            ]
+        else:
+            raise ValueError("Other modes not yet implemented.")
         [
-            element.update_tile(new_pointing=self.d, new_gain=1)
-            for element in self.elements
+            tile.break_number_of_elements(rng, n)
+            for n, tile in zip(number_of_broken_elements, self.elements)
         ]
 
     def ENU_rotation_matrix(self):
@@ -372,6 +468,12 @@ class Station:
         Helper function for the element list. Retrieves a property of the underlying elements.
         """
         return np.array([getattr(element, property) for element in self.elements])
+
+    def set_element_property(self, property, values):
+        [
+            setattr(element, property, value)
+            for element, value in zip(self.elements, values)
+        ]
 
     def calculate_array_factor(self, directions, frequency, tile_beams=None):
         """

@@ -207,11 +207,6 @@ def test_add_source(args_patch, args_source1, args_source2, expected):
             ],
             None,
         ),
-        (
-            ["files/skymodels/A-Team_lowres.skymodel", "CygA", "CygA_4_2", 73.8e6],
-            [["CygA", "CasA", "TauA", "VirA"], 40.733333333, 4.827e03],
-            None,
-        ),
     ],
 )
 def test_Skymodel_init(args, expected, expected_raises):

@@ -8,30 +8,35 @@ def get_beam(
     station,
     frequency,
     directions,
+    phase_center,
     antenna_mode,
     tile_number,
     antenna_number,
 ):
     if beam_value_mode == "full":
         beam = station.calculate_response(
-            frequency=frequency, directions=directions, antenna_mode=antenna_mode
+            frequency=frequency,
+            directions=directions,
+            pointing_directions=phase_center,
+            antenna_mode=antenna_mode,
         )
         cbar_title_value = "Full "
     elif beam_value_mode == "tile":
         beam = station.elements[tile_number].calculate_response(
-            frequency=frequency,
-            directions=directions,
+            frequency=frequency, directions=directions, pointing_directions=phase_center
         )
         cbar_title_value = "Tile "
     elif beam_value_mode == "station":
         beam = station.calculate_array_factor(
-            frequency=frequency,
-            directions=directions,
+            frequency=frequency, directions=directions, pointing_directions=phase_center
         )
         cbar_title_value = "Station "
     elif beam_value_mode == "array_factor":
         beam = station.calculate_response(
-            frequency=frequency, directions=directions, antenna_mode=None
+            frequency=frequency,
+            directions=directions,
+            antenna_mode=None,
+            pointing_directions=phase_center,
         )
         cbar_title_value = "Array factor "
     elif beam_value_mode == "element":
@@ -77,7 +82,8 @@ def plot_spatial_beam(
     antenna_number=0,
     points_of_interest=[],
     plot_title=None,
-    **kwargs
+    time="2024-01-01T00:00:00",
+    **kwargs,
 ):
     """
     Helper function to create plots of station beams easily
@@ -123,6 +129,8 @@ def plot_spatial_beam(
         axis=0,
     )
 
+    phase_center = station.radec_to_ENU(tracking_direction=True, time=time)
+
     # Calculate the beams
     beam, cbar_title = get_beam(
         beam_value_mode,
@@ -130,6 +138,7 @@ def plot_spatial_beam(
         station,
         frequency,
         directions,
+        phase_center,
         antenna_mode,
         tile_number,
         antenna_number,
@@ -189,7 +198,7 @@ def plot_spectrotemporal_beam(
     tile_number=0,
     antenna_number=0,
     plot_title=None,
-    **kwargs
+    **kwargs,
 ):
     """
     Helper function to create plots of station beams easily
@@ -223,16 +232,20 @@ def plot_spectrotemporal_beam(
     """
 
     # Find the direction unit vectors for the requested sweep ranges
-    directions = [
-        station.radec_to_ENU(
-            right_ascension=right_ascension,
-            declination=declination,
-            time=utc_starttime,
-            temporal_offset=time_resolution * n,
-        )
-        for n in range(number_of_timeslots)
-    ]
-    directions = np.array(directions).T
+    directions = station.radec_to_ENU(
+        right_ascension=right_ascension,
+        declination=declination,
+        time=utc_starttime,
+        temporal_offset=time_resolution,
+        number_of_timesteps=number_of_timeslots,
+    )
+
+    phase_center = station.radec_to_ENU(
+        tracking_direction=True,
+        time=utc_starttime,
+        temporal_offset=time_resolution,
+        number_of_timesteps=number_of_timeslots,
+    )
 
     beam = np.empty([frequencies.size, number_of_timeslots])
     for channel_number, frequency in enumerate(frequencies):
@@ -243,6 +256,7 @@ def plot_spectrotemporal_beam(
             station,
             frequency,
             directions,
+            phase_center,
             antenna_mode,
             tile_number,
             antenna_number,

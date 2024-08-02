@@ -4,28 +4,23 @@ import os
 os.chdir("..")
 
 from beam_errors.visualization import plot_spatial_beam, plot_spectrotemporal_beam
-from beam_errors.load_array import load_LOFAR
+from beam_errors.load_array import load_LOFAR, load_array_from_file
 import numpy as np
 
 array = load_LOFAR(mode="EoR")
 
+# %%
 # Core Station (CS001HBA0)
 station = array["CS002HBA0"]
 
-# Example pointings ENU
-station.update_station(new_pointing=[0, 0, 1])  # Zenith
-station.update_station(new_pointing=[1 / np.sqrt(2), 0, 1 / np.sqrt(2)])  # East
-station.update_station(new_pointing=[1, 1, 1] / np.sqrt(3))  # NE
-station.update_station(new_pointing=[-1, -2, 1] / np.sqrt(6))  # SSW
-station.update_station(new_pointing=[-1, 2, 3] / np.sqrt(14))  # NNW
+# Example pointing
+station.update_station_pointing(None, None)  # Drift-scan
+station.update_station_pointing(new_pointing_dec=90)  # NCP pointing
 
-# NCP pointing
-rotation_matrix = station.ENU_rotation_matrix()
-NCP_ENU = np.array([0, 0, 1]) @ rotation_matrix.T
-station.update_station(new_pointing=NCP_ENU)
-
+# %%
 # Cas and Cyg
 time = "2024-07-04T19:23:00"
+time = "2024-07-12T06:00:00"
 cas_coordinates = station.radec_to_ENU(
     right_ascension=350.8575, declination=58.148167, time=time
 )  # Right Ascension 23h 23m 25.8s, Declination +58º 8' 53.4''
@@ -43,6 +38,7 @@ plot_spatial_beam(
     n_azimuth=500,
     frequency=150e6,
     vmin=-50,
+    time=time,
     antenna_mode="simplified",
     beam_plot_mode="power",
     beam_value_mode="element",
@@ -61,6 +57,7 @@ plot_spatial_beam(
     beam_plot_mode="power",
     beam_value_mode="tile",
     cmap="jet",
+    time=time,
     points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
@@ -75,6 +72,7 @@ plot_spatial_beam(
     beam_plot_mode="power",
     beam_value_mode="station",
     cmap="jet",
+    time=time,
     points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
@@ -89,6 +87,7 @@ plot_spatial_beam(
     beam_plot_mode="power",
     beam_value_mode="array_factor",
     cmap="jet",
+    time=time,
     points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
@@ -103,6 +102,7 @@ plot_spatial_beam(
     beam_plot_mode="power",
     beam_value_mode="full",
     cmap="jet",
+    time=time,
     points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
@@ -117,6 +117,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="element",
     vmin=None,
+    utc_starttime=time,
     number_of_timeslots=1800,
 )
 
@@ -129,6 +130,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="tile",
     vmin=None,
+    utc_starttime=time,
     number_of_timeslots=1800,
 )
 
@@ -142,6 +144,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="station",
     vmin=None,
+    utc_starttime=time,
     number_of_timeslots=1800,
 )
 
@@ -154,6 +157,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="array_factor",
     vmin=None,
+    utc_starttime=time,
     number_of_timeslots=1800,
 )
 
@@ -166,6 +170,7 @@ plot_spectrotemporal_beam(
     beam_plot_mode="power",
     beam_value_mode="full",
     vmin=None,
+    utc_starttime=time,
     number_of_timeslots=1800,
 )
 

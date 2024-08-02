@@ -2,11 +2,9 @@ import numpy as np
 import numbers
 from joblib import Parallel, delayed
 from numba import jit, complex128, float64, prange
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz
-from astropy.time import Time, TimeDelta
+from astropy.coordinates import EarthLocation, AltAz
+from astropy.time import Time
 from astropy import constants as const
-import time as tm
-from matplotlib import pyplot as plt
 
 
 @jit(

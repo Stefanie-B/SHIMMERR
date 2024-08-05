@@ -511,7 +511,7 @@ class Station:
             M length response
         """
         if antenna_mode is not None:
-            # Calculate antenna beams (only needs to be done once )
+            # Calculate antenna beams (only needs to be done once for now, since all antenna beam patterns are the same)
             antenna_beams = (
                 self.elements[0]
                 .elements[0]

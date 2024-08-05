@@ -504,6 +504,8 @@ class Station:
             If set to None (default) this disables the element beams and only the array factor is returned. Otherwise, give the requested antenna type.
         pointing_directions : ndarray, optional
             3xM array of unit length vectors that decribe the direction of the pointing center in ENU coordinates. Default is None (drift-scan)
+        calculate_all_tiles : bool, optional
+            If set, all tile beams are computed separately (allows for antenna drift), if unset, a tile beam pattern is reused for all tiles. Default is False.
 
         Returns
         -------
@@ -521,40 +523,32 @@ class Station:
                     mode=antenna_mode,
                 )
             )
+        else:
+            antenna_beams = None
 
-            # Calculate the geometric delays of the antennas to get the full tile beams
-            if calculate_all_tiles:
-                # all tiles are calculated separately (allows for antenna drift)
-                tile_beams = [
-                    tile.calculate_response(
-                        directions=directions,
-                        pointing_directions=pointing_directions,
-                        frequency=frequency,
-                        antenna_beams=antenna_beams,
-                    )
-                    for tile in self.elements
-                ]
-            else:
-                # We use a set tile beam with unit gain per antenna for all tiles. The positions are based on the first tile
-                model_tile = copy.deepcopy(self.elements[0])
-                model_tile.reset_elements()
-                tile_beam = model_tile.calculate_response(
+        # Calculate the geometric delays of the antennas to get the full tile beams
+        if calculate_all_tiles:
+            # all tiles are calculated separately (allows for antenna drift)
+            tile_beams = [
+                tile.calculate_response(
                     directions=directions,
                     pointing_directions=pointing_directions,
                     frequency=frequency,
                     antenna_beams=antenna_beams,
                 )
-                tile_beams = [tile_beam for _ in self.elements]
-        else:
-            # Array factor only option
-            tile_beams = [
-                tile.calculate_response(
-                    frequency=frequency,
-                    directions=directions,
-                    pointing_directions=pointing_directions,
-                )
                 for tile in self.elements
             ]
+        else:
+            # We use a set tile beam with unit gain per antenna for all tiles. The positions are based on the first tile
+            model_tile = copy.deepcopy(self.elements[0])
+            model_tile.reset_elements()
+            tile_beam = model_tile.calculate_response(
+                directions=directions,
+                pointing_directions=pointing_directions,
+                frequency=frequency,
+                antenna_beams=antenna_beams,
+            )
+            tile_beams = [tile_beam for _ in self.elements]
 
         # Combine the tiles with geometric delay
         station_beam = self.calculate_array_factor(

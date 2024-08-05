@@ -92,6 +92,7 @@ def predict_patch_visibilities(
     antenna_mode="omnidirectional",
     basestation=None,
     prediction_batch_size=10000,
+    reuse_tile_beam=False,
 ):
     """
     Predicts noiseless visibilities of each patch and saves each patch to disk.
@@ -168,6 +169,7 @@ def predict_patch_visibilities(
                     directions=directions,
                     pointing_directions=phase_center,
                     antenna_mode=antenna_mode,
+                    calculate_all_tiles=not reuse_tile_beam,
                 )
 
                 # Geometric delay for the station

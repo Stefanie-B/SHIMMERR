@@ -12,6 +12,7 @@ def get_beam(
     antenna_mode,
     tile_number,
     antenna_number,
+    calculate_all_tiles,
 ):
     if beam_value_mode == "full":
         beam = station.calculate_response(
@@ -19,6 +20,7 @@ def get_beam(
             directions=directions,
             pointing_directions=phase_center,
             antenna_mode=antenna_mode,
+            calculate_all_tiles=calculate_all_tiles,
         )
         cbar_title_value = "Full "
     elif beam_value_mode == "tile":
@@ -37,6 +39,7 @@ def get_beam(
             directions=directions,
             antenna_mode=None,
             pointing_directions=phase_center,
+            calculate_all_tiles=calculate_all_tiles,
         )
         cbar_title_value = "Array factor "
     elif beam_value_mode == "element":
@@ -83,6 +86,7 @@ def plot_spatial_beam(
     points_of_interest=[],
     plot_title=None,
     time="2024-01-01T00:00:00",
+    calculate_all_tiles=True,
     **kwargs,
 ):
     """
@@ -142,6 +146,7 @@ def plot_spatial_beam(
         antenna_mode,
         tile_number,
         antenna_number,
+        calculate_all_tiles,
     )
 
     ## Create plot
@@ -198,6 +203,7 @@ def plot_spectrotemporal_beam(
     tile_number=0,
     antenna_number=0,
     plot_title=None,
+    calculate_all_tiles=True,
     **kwargs,
 ):
     """
@@ -260,6 +266,7 @@ def plot_spectrotemporal_beam(
             antenna_mode,
             tile_number,
             antenna_number,
+            calculate_all_tiles,
         )
 
     T, F = np.meshgrid(

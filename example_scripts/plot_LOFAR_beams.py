@@ -11,7 +11,9 @@ array = load_LOFAR(mode="EoR")
 
 # %%
 # Core Station (CS001HBA0)
+array["CS002HBA0"].elements[0].elements[3].g = 3
 station = array["CS002HBA0"]
+
 
 # Example pointing
 station.update_station_pointing(None, None)  # Drift-scan

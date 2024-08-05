@@ -1,6 +1,6 @@
 import numpy as np
 import numbers
-from joblib import Parallel, delayed
+import copy
 from numba import jit, complex128, float64, prange
 from astropy.coordinates import EarthLocation, AltAz
 from astropy.time import Time
@@ -489,7 +489,7 @@ class Station:
         frequency,
         antenna_mode=None,
         pointing_directions=None,
-        calculate_all_elements=True,
+        calculate_all_tiles=True,
     ):
         """
         Calculates the full station beam in M directions.
@@ -522,17 +522,29 @@ class Station:
                 )
             )
 
-            # Calculate the gemetric delays of the antennas to get the full tile beams
-            tile_beams = [
-                tile.calculate_response(
+            # Calculate the geometric delays of the antennas to get the full tile beams
+            if calculate_all_tiles:
+                # all tiles are calculated separately (allows for antenna drift)
+                tile_beams = [
+                    tile.calculate_response(
+                        directions=directions,
+                        pointing_directions=pointing_directions,
+                        frequency=frequency,
+                        antenna_beams=antenna_beams,
+                    )
+                    for tile in self.elements
+                ]
+            else:
+                # We use a set tile beam with unit gain per antenna for all tiles. The positions are based on the first tile
+                model_tile = copy.deepcopy(self.elements[0])
+                model_tile.reset_elements()
+                tile_beam = model_tile.calculate_response(
                     directions=directions,
                     pointing_directions=pointing_directions,
                     frequency=frequency,
                     antenna_beams=antenna_beams,
                 )
-                for tile in self.elements
-            ]
-
+                tile_beams = [tile_beam for _ in self.elements]
         else:
             # Array factor only option
             tile_beams = [

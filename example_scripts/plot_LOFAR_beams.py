@@ -106,6 +106,23 @@ plot_spatial_beam(
     points_of_interest=[cas_coordinates, cyg_coordinates],
 )
 
+# Full beam, unit tile
+plot_spatial_beam(
+    station,
+    n_altitude=250,
+    n_azimuth=500,
+    frequency=150e6,
+    vmin=-50,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="full",
+    cmap="jet",
+    time=time,
+    points_of_interest=[cas_coordinates, cyg_coordinates],
+    calculate_all_tiles=False,
+)
+
+
 # %%
 
 # Element beam
@@ -172,6 +189,20 @@ plot_spectrotemporal_beam(
     vmin=None,
     utc_starttime=time,
     number_of_timeslots=1800,
+)
+
+# Full beam, unit tile
+plot_spectrotemporal_beam(
+    station,
+    right_ascension=350.8575,
+    declination=58.148167,
+    antenna_mode="simplified",
+    beam_plot_mode="power",
+    beam_value_mode="full",
+    vmin=None,
+    utc_starttime=time,
+    number_of_timeslots=1800,
+    calculate_all_tiles=False,
 )
 
 # %%

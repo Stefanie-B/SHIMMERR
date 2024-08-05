@@ -484,7 +484,12 @@ class Station:
         return station_beam
 
     def calculate_response(
-        self, directions, frequency, antenna_mode=None, pointing_directions=None
+        self,
+        directions,
+        frequency,
+        antenna_mode=None,
+        pointing_directions=None,
+        calculate_all_elements=True,
     ):
         """
         Calculates the full station beam in M directions.
@@ -506,26 +511,15 @@ class Station:
             M length response
         """
         if antenna_mode is not None:
-            # Calculate antenna beams (in parallel for large arrays)
-            def element_response_wrapper(tile, frequency, directions, antenna_mode):
-                antenna_beams = [
-                    antenna.calculate_response(
-                        frequency=frequency,
-                        directions=directions,
-                        mode=antenna_mode,
-                    )
-                    for antenna in tile.elements
-                ]
-                return antenna_beams
-
-            antenna_beams = Parallel(n_jobs=-1)(
-                delayed(element_response_wrapper)(
-                    tile=tile,
-                    directions=directions,
+            # Calculate antenna beams (only needs to be done once )
+            antenna_beams = (
+                self.elements[0]
+                .elements[0]
+                .calculate_response(
                     frequency=frequency,
-                    antenna_mode=antenna_mode,
+                    directions=directions,
+                    mode=antenna_mode,
                 )
-                for tile in self.elements
             )
 
             # Calculate the gemetric delays of the antennas to get the full tile beams
@@ -534,9 +528,9 @@ class Station:
                     directions=directions,
                     pointing_directions=pointing_directions,
                     frequency=frequency,
-                    antenna_beams=antenna_beams[tile_number],
+                    antenna_beams=antenna_beams,
                 )
-                for tile_number, tile in enumerate(self.elements)
+                for tile in self.elements
             ]
 
         else:

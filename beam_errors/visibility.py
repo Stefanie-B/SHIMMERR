@@ -80,6 +80,41 @@ def record_beams(
     return df
 
 
+def process_batch(batch, source_powers):
+    # Create a dataframe to do baseline computations on (such that all combinations of stations are present at each interval)
+    baseline_frame = batch.merge(
+        batch, on=["time", "frequency", "source"], suffixes=(" 1", " 2")
+    )
+
+    # Remove duplicate baselines (if i-j is included, j-i is removed)
+    baseline_frame = baseline_frame[
+        baseline_frame["station 1"] <= baseline_frame["station 2"]
+    ]
+
+    # Complex array response towards each source (value of station 1 times conj(value) of station 2)
+    baseline_frame["visibility"] = baseline_frame["value 1"] * np.conj(
+        baseline_frame["value 2"]
+    )
+    baseline_frame.loc[:, "visibility"] = baseline_frame[
+        "visibility"
+    ] * baseline_frame.apply(
+        lambda row: source_powers[(row["source"], row["frequency"])], axis=1
+    )
+
+    # Sum all sources in the patch to get the visibility
+    visibility_frame = baseline_frame[
+        ["time", "station 1", "station 2", "frequency", "source", "visibility"]
+    ]
+    visibility = (
+        visibility_frame.groupby(
+            ["time", "station 1", "station 2", "frequency"], observed=True
+        )
+        .agg({"visibility": "sum"})
+        .reset_index()
+    )
+    return visibility
+
+
 def predict_patch_visibilities(
     array,
     skymodel,
@@ -91,7 +126,6 @@ def predict_patch_visibilities(
     duration=12,
     antenna_mode="omnidirectional",
     basestation=None,
-    prediction_batch_size=10000,
     reuse_tile_beam=False,
 ):
     """
@@ -235,65 +269,22 @@ def predict_patch_visibilities(
         }
 
         # Per processing step, we need to have all sources in a patch and all stations, so the chunk must be an integer multiple of this (at at least 1 batch)
-        prediction_chunk = len(patch.elements) * len(array.keys())
-        batch_size = np.max(
-            [
-                prediction_batch_size // prediction_chunk * prediction_chunk,
-                prediction_chunk,  # if the prediction_batch size is set too low, we select 1 prediction_chunk
-            ]
+        batch_size = len(patch.elements) * len(array.keys())
+        batches = [
+            all_beams.iloc[i * batch_size : (i + 1) * batch_size]
+            for i in range(len(all_beams) // batch_size)
+        ]
+
+        visibilities = Parallel(n_jobs=-1)(
+            delayed(process_batch)(batch, source_powers) for batch in tqdm(batches)
         )
-        number_of_batches = (len(all_beams) // batch_size) + 1
-        first_batch = True
 
-        for batch_number in trange(number_of_batches):
-            # Split in time and frequency
-            batch = all_beams.iloc[
-                batch_number * batch_size : (batch_number + 1) * batch_size
-            ]
-            if (
-                len(batch) == 0
-            ):  # in case len(all_beams) is an integer multiple of batch_size, the last batch is empty
-                break
-
-            # Create a dataframe to do baseline computations on (such that all combinations of stations are present at each interval)
-            baseline_frame = batch.merge(
-                batch, on=["time", "frequency", "source"], suffixes=(" 1", " 2")
-            )
-
-            # Remove duplicate baselines (if i-j is included, j-i is removed)
-            baseline_frame = baseline_frame[
-                baseline_frame["station 1"] <= baseline_frame["station 2"]
-            ]
-
-            # Complex array response towards each source (value of station 1 times conj(value) of station 2)
-            baseline_frame["visibility"] = baseline_frame["value 1"] * np.conj(
-                baseline_frame["value 2"]
-            )
-            baseline_frame.loc[:, "visibility"] = baseline_frame[
-                "visibility"
-            ] * baseline_frame.apply(
-                lambda row: source_powers[(row["source"], row["frequency"])], axis=1
-            )
-
-            # Sum all sources in the patch to get the visibility
-            visibility_frame = baseline_frame[
-                ["time", "station 1", "station 2", "frequency", "source", "visibility"]
-            ]
-            visibility = (
-                visibility_frame.groupby(
-                    ["time", "station 1", "station 2", "frequency"], observed=True
-                )
-                .agg({"visibility": "sum"})
-                .reset_index()
-            )
-
-            # Write out the visbility
-            visibility.to_csv(
+        for i, df in enumerate(visibilities):
+            df.to_csv(
                 f"{data_path}/{filename}/{patch_name}.csv",
                 index=False,
-                header=first_batch,
-                mode="w" if first_batch else "a",
+                header=(i == 0),
+                mode="w" if i == 0 else "a",
             )
-            first_batch = False
 
         os.remove(f"{data_path}/{filename}/temp.csv")

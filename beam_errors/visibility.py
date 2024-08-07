@@ -281,10 +281,103 @@ def predict_patch_visibilities(
 
         for i, df in enumerate(visibilities):
             df.to_csv(
-                f"{data_path}/{filename}/{patch_name}.csv",
+                f"{data_path}/{filename}/patch_models/{patch_name}.csv",
                 index=False,
                 header=(i == 0),
                 mode="w" if i == 0 else "a",
             )
 
         os.remove(f"{data_path}/{filename}/temp.csv")
+
+
+def add_thermal_noise(data_path, sefd):
+    file_name_in = f"{data_path}full_model.csv"
+    file_name_out = f"{data_path}data.csv"
+    first_batch = True
+    rng = np.random.default_rng()
+    for batch in pd.read_csv(file_name_in, chunksize=1e5):
+        if first_batch:
+            d_frequency = np.diff(batch["frequency"].iloc[:2].values.astype(float))
+            d_time = np.diff(batch["time"].iloc[:2].values.astype(float))
+            std_dev = sefd / np.sqrt(2 * d_time * d_frequency)
+            first_batch = False
+        visibility = batch["visibility"].values.astype(complex)
+        noise = rng.standard_normal(2 * visibility.size) * std_dev
+        complex_noise = noise[: visibility.size] + 1j * noise[visibility.size :]
+        noisy_visibility = visibility + complex_noise.reshape(visibility.shape)
+
+        batch["visibility"] = noisy_visibility
+        batch.to_csv(
+            file_name_out,
+            index=False,
+            header=first_batch,
+            mode="w" if first_batch else "a",
+        )
+
+
+def _read_dataframes_in_batches(directory, batch_size, patch_names):
+    all_files = [f"{directory}{patch_name}.csv" for patch_name in patch_names]
+    batch_files = [
+        all_files[i : i + batch_size] for i in range(0, len(all_files), batch_size)
+    ]
+
+    for batch in batch_files:
+        dataframes = [pd.read_csv(os.path.join(directory, file)) for file in batch]
+        yield dataframes
+
+
+def sum_patches(filename, data_path, skymodel):
+
+    model_directory = f"{data_path}/{filename}/patch_models"
+    batch_size = 1e5 // len(skymodel.items())
+    file_name_out = f"{data_path}/{filename}/full_model.csv"
+
+    first_batch = True
+    for batch in _read_dataframes_in_batches(
+        model_directory, batch_size, list(skymodel.elements.keys())
+    ):
+        full_model = (
+            pd.concat(batch)
+            .groupby(["time", "station 1", "station 2", "frequency"], observed=True)
+            .agg({"visibility": "sum"})
+        )
+        full_model.to_csv(
+            file_name_out,
+            index=False,
+            header=first_batch,
+            mode="w" if first_batch else "a",
+        )
+        first_batch = False
+
+
+def predict_sky(
+    array,
+    skymodel,
+    frequencies,
+    start_time_utc,
+    filename,
+    data_path="./data/predictions",
+    time_resolution=2,
+    duration=12,
+    antenna_mode="omnidirectional",
+    basestation=None,
+    reuse_tile_beam=False,
+    SEFD=4.2e3,
+):
+    predict_patch_visibilities(
+        array=array,
+        skymodel=skymodel,
+        frequencies=frequencies,
+        start_time_utc=start_time_utc,
+        filename=filename,
+        data_path=data_path,
+        time_resolution=time_resolution,
+        duration=duration,
+        antenna_mode=antenna_mode,
+        basestation=basestation,
+        reuse_tile_beam=reuse_tile_beam,
+    )
+
+    sum_patches(filename, data_path, skymodel)
+
+    add_thermal_noise(data_path, SEFD)

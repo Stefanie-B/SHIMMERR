@@ -1,5 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
+import pandas as pd
+from astropy.time import Time
 
 
 def get_beam(
@@ -297,4 +299,78 @@ def plot_spectrotemporal_beam(
     cbar.set_label(cbar_title)
     ax.set_xlabel(r"Time since start of observation (min)")
     ax.set_ylabel(r"Frequency (MHz)")
+    fig.show()
+
+
+def plot_visibility(
+    file,
+    station_pairs,
+    magnitude_range=[None, None],
+    phase_range=[-np.pi, np.pi],
+    **kwargs,
+):
+    dataframe = pd.read_csv(file)
+    for column in ["time", "frequency", "station 1", "station 2"]:
+        dataframe[column] = dataframe[column].astype(pd.CategoricalDtype(ordered=True))
+
+    time_stamps = np.unique(dataframe["time"])
+    time_offsets = [Time(time_stamp).unix / 60 for time_stamp in time_stamps]
+    time_offsets -= time_offsets[0]
+
+    frequencies = np.unique(dataframe["frequency"]).astype(float)
+
+    F, T = np.meshgrid(frequencies * 1e-6, time_offsets)
+
+    ## Create plot
+    fig, axs = plt.subplots(
+        ncols=2, nrows=len(station_pairs), figsize=(8, 3 * len(station_pairs))
+    )
+    for plot_number, station_pair in enumerate(station_pairs):
+        visibilities = dataframe.loc[
+            (
+                (dataframe["station 1"] == station_pair[0])
+                & (dataframe["station 2"] == station_pair[1])
+            )
+            | (
+                (dataframe["station 1"] == station_pair[1])
+                & (dataframe["station 2"] == station_pair[0])
+            ),
+            "visibility",
+        ]
+        visibilities = visibilities.values.astype(complex).reshape(F.shape)
+
+        im = axs[plot_number, 0].pcolormesh(
+            T,
+            F,
+            np.abs(visibilities),
+            vmin=magnitude_range[0],
+            vmax=magnitude_range[1],
+            cmap="viridis",
+            **kwargs,
+        )
+
+        cbar = fig.colorbar(im, ax=axs[plot_number, 0], orientation="vertical")
+        cbar.set_label("|V|")
+
+        im = axs[plot_number, 1].pcolormesh(
+            T,
+            F,
+            np.angle(visibilities),
+            vmin=phase_range[0],
+            vmax=phase_range[1],
+            cmap="hsv",
+            **kwargs,
+        )
+
+        cbar = fig.colorbar(im, ax=axs[plot_number, 1], orientation="vertical")
+        cbar.set_label(r"$\angle$ V")
+
+        axs[plot_number, 0].set_ylabel(f" {'-'.join(station_pair)} \n Frequency (MHz)")
+        axs[plot_number, 1].set_yticklabels([])
+
+    for i in range(2):
+        axs[-1, i].set_xlabel(r"Time since start of observation (min)")
+        for j in range(len(station_pairs) - 1):
+            axs[j, i].set_xticklabels([])
+
     fig.show()

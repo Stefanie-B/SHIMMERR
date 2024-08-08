@@ -156,7 +156,7 @@ def predict_patch_visibilities(
     prediction_batch_size : int, optional
         approximate batch size for each visibility prediction after beam calculation. This is a trade off between speed and memory virtualization. The batch will become an integer multiple of the number of stations * number of sources, so this number may be exceeded if one of such batches is larger than the specified value, by default 10000.
     """
-    os.makedirs(f"{data_path}/{filename}", exist_ok=True)
+    os.makedirs(f"{data_path}/{filename}/patch_models", exist_ok=True)
 
     # Create time labels to write for the data later
     time_labels = get_time_labels(start_time_utc, duration, time_resolution)
@@ -290,17 +290,19 @@ def predict_patch_visibilities(
         os.remove(f"{data_path}/{filename}/temp.csv")
 
 
-def add_thermal_noise(data_path, sefd):
-    file_name_in = f"{data_path}full_model.csv"
-    file_name_out = f"{data_path}data.csv"
+def add_thermal_noise(filename, data_path, sefd):
+    file_name_in = f"{data_path}/{filename}/full_model.csv"
+    file_name_out = f"{data_path}/{filename}/data.csv"
     first_batch = True
     rng = np.random.default_rng()
-    for batch in pd.read_csv(file_name_in, chunksize=1e5):
+    for batch in pd.read_csv(file_name_in, chunksize=int(1e5)):
         if first_batch:
-            d_frequency = np.diff(batch["frequency"].iloc[:2].values.astype(float))
-            d_time = np.diff(batch["time"].iloc[:2].values.astype(float))
+            d_frequency = np.diff(np.unique(batch["frequency"]).astype(float))[0]
+            times = np.unique(batch["time"])
+            t1 = Time(times[0])
+            t2 = Time(times[1])
+            d_time = (t2 - t1).sec
             std_dev = sefd / np.sqrt(2 * d_time * d_frequency)
-            first_batch = False
         visibility = batch["visibility"].values.astype(complex)
         noise = rng.standard_normal(2 * visibility.size) * std_dev
         complex_noise = noise[: visibility.size] + 1j * noise[visibility.size :]
@@ -313,44 +315,35 @@ def add_thermal_noise(data_path, sefd):
             header=first_batch,
             mode="w" if first_batch else "a",
         )
-
-
-def _read_dataframes_in_batches(directory, batch_size, patch_names):
-    all_files = [f"{directory}{patch_name}.csv" for patch_name in patch_names]
-    batch_files = [
-        all_files[i : i + batch_size] for i in range(0, len(all_files), batch_size)
-    ]
-
-    for batch in batch_files:
-        dataframes = [pd.read_csv(os.path.join(directory, file)) for file in batch]
-        yield dataframes
+        first_batch = False
 
 
 def sum_patches(filename, data_path, skymodel):
 
-    model_directory = f"{data_path}/{filename}/patch_models"
-    batch_size = 1e5 // len(skymodel.items())
+    model_directory = f"{data_path}/{filename}/patch_models/"
     file_name_out = f"{data_path}/{filename}/full_model.csv"
 
-    first_batch = True
-    for batch in _read_dataframes_in_batches(
-        model_directory, batch_size, list(skymodel.elements.keys())
-    ):
-        full_model = (
-            pd.concat(batch)
-            .groupby(["time", "station 1", "station 2", "frequency"], observed=True)
-            .agg({"visibility": "sum"})
-        )
-        full_model.to_csv(
-            file_name_out,
-            index=False,
-            header=first_batch,
-            mode="w" if first_batch else "a",
-        )
-        first_batch = False
+    patch_names = list(skymodel.elements.keys())
+    all_files = [f"{model_directory}{patch_name}.csv" for patch_name in patch_names]
+    patch_dataframes = [pd.read_csv(file) for file in all_files]
+    for patch_dataframe in patch_dataframes:
+        patch_dataframe["visibility"] = patch_dataframe["visibility"].astype(complex)
+
+    full_model = (
+        pd.concat(patch_dataframes)
+        .groupby(["time", "station 1", "station 2", "frequency"], observed=True)
+        .agg({"visibility": "sum"})
+    ).reset_index()
+
+    full_model.to_csv(
+        file_name_out,
+        index=False,
+        header=True,
+        mode="w",
+    )
 
 
-def predict_sky(
+def predict_data(
     array,
     skymodel,
     frequencies,
@@ -380,4 +373,4 @@ def predict_sky(
 
     sum_patches(filename, data_path, skymodel)
 
-    add_thermal_noise(data_path, SEFD)
+    add_thermal_noise(filename, data_path, SEFD)

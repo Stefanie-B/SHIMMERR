@@ -181,7 +181,7 @@ class Tile:
         """
         Resets all elements in the tile to have unit gain
         """
-        [element.update_antenna(new_gain=1) for element in self.elements]
+        [element.update_antenna(new_gain=1.0 + 0j) for element in self.elements]
 
     def set_ENU_positions(self, rotation_matrix, station_position):
         """
@@ -371,10 +371,8 @@ class Station:
         """
         Resets all elements in the tile to the common pointing and unit gain.
         """
-        [
-            element.update_tile(new_pointing=self.d, new_gain=1)
-            for element in self.elements
-        ]
+        [element.reset_elements() for element in self.elements]
+        self.set_element_property("g", 1.0 + 0j, True)
 
     def ENU_rotation_matrix(self):
         """

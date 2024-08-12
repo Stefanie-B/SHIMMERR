@@ -100,15 +100,18 @@ def process_batch(batch, source_powers):
     ] * baseline_frame.apply(
         lambda row: source_powers[(row["source"], row["frequency"])], axis=1
     )
+    baseline_frame["baseline"] = (
+        baseline_frame["station 1"].astype(str)
+        + "-"
+        + baseline_frame["station 2"].astype(str)
+    )
 
     # Sum all sources in the patch to get the visibility
     visibility_frame = baseline_frame[
-        ["time", "station 1", "station 2", "frequency", "source", "visibility"]
+        ["time", "baseline", "frequency", "source", "visibility"]
     ]
     visibility = (
-        visibility_frame.groupby(
-            ["time", "station 1", "station 2", "frequency"], observed=True
-        )
+        visibility_frame.groupby(["time", "frequency", "baseline"], observed=True)
         .agg({"visibility": "sum"})
         .reset_index()
     )
@@ -331,9 +334,10 @@ def sum_patches(filename, data_path, skymodel):
 
     full_model = (
         pd.concat(patch_dataframes)
-        .groupby(["time", "station 1", "station 2", "frequency"], observed=True)
+        .groupby(["time", "frequency", "baseline"], observed=True)
         .agg({"visibility": "sum"})
-    ).reset_index()
+        .reset_index()
+    )
 
     full_model.to_csv(
         file_name_out,
@@ -373,4 +377,5 @@ def predict_data(
 
     sum_patches(filename, data_path, skymodel)
 
-    add_thermal_noise(filename, data_path, SEFD)
+    if SEFD is not None:
+        add_thermal_noise(filename, data_path, SEFD)

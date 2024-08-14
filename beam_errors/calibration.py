@@ -42,6 +42,17 @@ def predict_model(
     )
 
 
+def _reweight_function(coherence, reweight_mode="abs"):
+    if reweight_mode == "abs":
+        return np.sum(np.abs(coherence), axis=(1, 2, 3))
+    elif reweight_mode == "squared":
+        return np.sum(np.abs(coherence) ** 2, axis=(1, 2, 3))
+    elif reweight_mode is None:
+        return np.ones(coherence.shape[0])
+    else:
+        raise ValueError("invalid reweight mode")
+
+
 def _DDEcal_iteration_station(gains, vis_station, coh_station, n_patches):
     m_chunk = coh_station * np.conj(gains.T[:, np.newaxis, np.newaxis, :])
 
@@ -59,10 +70,10 @@ def _DDEcal_iteration_station(gains, vis_station, coh_station, n_patches):
     # Q, R = np.linalg.qr(M)
     # R_inv = solve_triangular(R, np.eye(n_patches), lower=False)
     new_gains = V @ np.linalg.pinv(M)
-    return new_gains, np.sum(np.abs(V - new_gains @ M) ** 2)
+    return new_gains, np.sum(np.abs(V - gains @ M) ** 2)
 
 
-def _DDEcal_smooth_frequencies(gains, frequencies, smoothness_scale):
+def _DDEcal_smooth_frequencies(gains, frequencies, smoothness_scale, weights=None):
     """
     Doesn't work for variable smoothing kernel or non-gaussian smoothing
 
@@ -83,9 +94,8 @@ def _DDEcal_smooth_frequencies(gains, frequencies, smoothness_scale):
     if smoothness_scale == 0:
         return gains
     smoothed_gains = np.empty_like(gains)
-    weights = np.ones(
-        gains.shape
-    )  # will be used for reweighting in later implementation
+    if weights is None:
+        weights = np.ones(gains.shape)
 
     for i, f in enumerate(frequencies):
         # Kernel based on relative spectral distance
@@ -118,6 +128,7 @@ def _DDEcal(
     n_iterations,
     tolerance,
     update_speed,
+    reweight_mode,
 ):
 
     n_stations = len(stations)
@@ -137,6 +148,7 @@ def _DDEcal(
         np.sum(np.abs(new_gains - gains))  # conditie updaten!!!
         > tolerance * (1 - update_speed)
     ):
+        weights = np.zeros_like(gains, dtype=float)
         for i, station in enumerate(stations):
             for f in range(n_spectral_sols):
                 new_gains[f, i, :], new_residuals = _DDEcal_iteration_station(
@@ -150,10 +162,20 @@ def _DDEcal(
                     n_patches=n_patches,
                 )
                 residuals[iteration] += new_residuals
-        gains = (1 - update_speed) * gains + update_speed * new_gains
-        gains = _DDEcal_smooth_frequencies(
-            gains=gains, frequencies=frequencies, smoothness_scale=smoothness_scale
+                weights[f, i, :] = _reweight_function(
+                    coh_chunk[
+                        :, :, f * n_channels : (f + 1) * n_channels, bl_mask[i, :]
+                    ],
+                    reweight_mode=reweight_mode,
+                )
+        smoothed_gain_update = _DDEcal_smooth_frequencies(
+            gains=new_gains,
+            frequencies=frequencies,
+            smoothness_scale=smoothness_scale,
+            weights=weights,
         )
+        gains = (1 - update_speed) * gains + update_speed * smoothed_gain_update
+
         iteration += 1
     residuals[iteration + 1 :] = np.nan
     return {"gains": gains, "residuals": residuals}
@@ -226,9 +248,10 @@ def run_DDEcal(
     reuse_predict=False,
     antenna_mode="omnidirectional",
     n_iterations=50,
-    tolerance=1e-3,
-    update_speed=0.5,
+    tolerance=1e-6,
+    update_speed=0.2,
     smoothness_scale=4e6,
+    reweight_mode=None,
 ):
     data_path = visibility_file.rstrip("/data.csv")
     # parse visibility
@@ -299,6 +322,7 @@ def run_DDEcal(
             n_iterations=n_iterations,
             tolerance=tolerance,
             update_speed=update_speed,
+            reweight_mode=reweight_mode,
         )
         for t in np.arange(0, times.size, n_times)
     )

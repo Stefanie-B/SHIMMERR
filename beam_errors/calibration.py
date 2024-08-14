@@ -42,10 +42,77 @@ def predict_model(
     )
 
 
+def _DDEcal_iteration_station(gains, vis_station, coh_station, n_patches):
+    m_chunk = coh_station * gains.T[:, np.newaxis, np.newaxis, :]
+
+    # The single letter variables correspond to the matrix names in Gan et al. (2022)
+    V = vis_station.swapaxes(0, 2).reshape(
+        1, -1
+    )  # time, freq, stat --> stat, freq * time
+    M = m_chunk.swapaxes(1, 3).reshape(
+        n_patches, -1
+    )  # dir, time, freq, stat --> dir, stat, freq * time
+
+    # M-1 = R-1Q-1 = R-1Q.T
+    # V=JM = J (MT)T = J (QR).T
+    # J = J (QR).T ((QR).T)-1 = V ((QR).T)-1 = V (R.TQ.T)-1 = V Q.T-1 R.T-1 = V Q R.T-1
+    # Q, R = np.linalg.qr(M)
+    # R_inv = solve_triangular(R, np.eye(n_patches), lower=False)
+    pseudoinverse = np.conj(M).T @ np.linalg.inv(M @ np.conj(M).T)
+    return V @ pseudoinverse, np.sum(np.abs(V - gains @ M))
+
+
+def _DDEcal_smooth_frequencies(gains, frequencies, smoothness_scale):
+    """
+    Doesn't work for variable smoothing kernel or non-gaussian smoothing
+
+    Parameters
+    ----------
+    gains : _type_
+        _description_
+    frequencies : _type_
+        _description_
+    smoothness_scale : _type_
+        _description_
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    if smoothness_scale == 0:
+        return gains
+    smoothed_gains = np.empty_like(gains)
+    weights = np.ones(
+        gains.shape
+    )  # will be used for reweighting in later implementation
+
+    for i, f in enumerate(frequencies):
+        # Kernel based on relative spectral distance
+        distances = (f - frequencies) / smoothness_scale
+        mask = (-1 < distances) * (distances < 1)
+
+        kernel = np.exp(-(distances[mask] ** 2) * 9)
+
+        convolved_gains = np.sum(
+            kernel[:, None, None] * weights[mask, :, :] * gains[mask, :, :], axis=0
+        )
+        convolved_weights = np.sum(kernel[:, None, None] * weights[mask, :, :], axis=0)
+
+        convolved_weights[convolved_weights == 0] = (
+            np.nan
+        )  # can't smooth with zero weigths
+
+        smoothed_gains[i, :, :] = convolved_gains / convolved_weights
+    return smoothed_gains
+
+
 def _DDEcal(
     vis_chunk,
     coh_chunk,
     smoothness_scale,
+    frequencies,
+    n_channels,
     stations,
     baselines,
     n_iterations,
@@ -55,7 +122,9 @@ def _DDEcal(
 
     n_stations = len(stations)
     n_patches = coh_chunk.shape[0]
-    gains = np.ones([n_stations, n_patches]).astype(complex)
+    n_freqs_total = coh_chunk.shape[2]
+    n_spectral_sols = n_freqs_total // n_channels
+    gains = np.ones([n_spectral_sols, n_stations, n_patches]).astype(complex)
 
     new_gains = np.zeros_like(gains)
     iteration = 0
@@ -69,20 +138,22 @@ def _DDEcal(
         > tolerance * (1 - update_speed)
     ):
         for i, station in enumerate(stations):
-            vis_station = vis_chunk[:, :, bl_mask[i, :]]
-            coh_station = coh_chunk[:, :, :, bl_mask[i, :]]
-
-            m_chunk = coh_station * gains.T[:, np.newaxis, np.newaxis, :]
-
-            # The single letter variables correspond to the matrix names in Gan et al. (2022)
-            V = vis_station.swapaxes(0, 2).reshape(1, -1)
-            M = m_chunk.swapaxes(1, 3).reshape(n_patches, -1)
-
-            Q, R = np.linalg.qr(M.T)
-            R_inv = solve_triangular(R, np.eye(n_patches), lower=False)
-            new_gains[i, :] = V @ Q @ R_inv
-            residuals[iteration] += np.abs(V - gains[i, :] @ M)
+            for f in range(n_spectral_sols):
+                new_gains[f, i, :], new_residuals = _DDEcal_iteration_station(
+                    gains=gains[f, :, :],
+                    vis_station=vis_chunk[
+                        :, f * n_channels : (f + 1) * n_channels, bl_mask[i, :]
+                    ],
+                    coh_station=coh_chunk[
+                        :, :, f * n_channels : (f + 1) * n_channels, bl_mask[i, :]
+                    ],
+                    n_patches=n_patches,
+                )
+                residuals[iteration] += new_residuals
         gains = (1 - update_speed) * gains + update_speed * new_gains
+        gains = _DDEcal_smooth_frequencies(
+            gains=gains, frequencies=frequencies, smoothness_scale=smoothness_scale
+        )
         iteration += 1
     residuals[iteration + 1 :] = np.nan
     return {"gains": gains, "residuals": residuals}
@@ -110,36 +181,6 @@ def read_data(visibility_file, array):
         baselines,
         baseline_length,
     )
-
-
-# def read_data2(visibility_file, array):
-#     df = pd.read_csv(visibility_file)
-#     df["baseline"] = df["station 1"].astype(str) + "-" + df["station 2"].astype(str)
-
-#     frequencies = np.unique(df["frequency"].astype(float))
-#     times = np.unique(df["time"])
-#     time_information = get_time_info(times)
-#     stations = np.unique(df["station 1"])
-#     baselines = np.array([bl.split("-") for bl in np.unique(df["baseline"])])
-#     baseline_length = calculate_baseline_length(array, baselines)
-
-#     df = df[["time", "baseline", "frequency", "visibility"]]
-#     df.set_index(["time", "baseline", "frequency"], inplace=True)
-#     df = df.unstack(level=["baseline", "frequency"])
-
-#     visibilities = df.values.reshape(
-#         len(times), len(baselines), len(frequencies)
-#     ).astype(complex)
-
-#     return (
-#         visibilities,
-#         times,
-#         time_information,
-#         frequencies,
-#         stations,
-#         baselines,
-#         baseline_length,
-#     )
 
 
 def calculate_baseline_length(array, baselines):
@@ -232,11 +273,27 @@ def run_DDEcal(
         coherency.reshape(1, len(times), len(frequencies), baselines.size // 2)
     coherency[:, :, flag_mask] = 0
 
+    # for t in np.arange(0, times.size, n_times):
+    #     results = _DDEcal(
+    #         vis_chunk=visibilities[t : t + n_times, :, :],
+    #         coh_chunk=coherency[:, t : t + n_times, :, :],
+    #         smoothness_scale=smoothness_scale,
+    #         frequencies=frequencies,
+    #         n_channels=n_channels,
+    #         stations=stations,
+    #         baselines=baselines,
+    #         n_iterations=n_iterations,
+    #         tolerance=tolerance,
+    #         update_speed=update_speed,
+    #     )
+
     results = Parallel(n_jobs=-1)(
         delayed(_DDEcal)(
-            vis_chunk=visibilities[t : t + n_times, f : f + n_channels, :],
-            coh_chunk=coherency[:, t : t + n_times, f : f + n_channels, :],
+            vis_chunk=visibilities[t : t + n_times, :, :],
+            coh_chunk=coherency[:, t : t + n_times, :, :],
             smoothness_scale=smoothness_scale,
+            frequencies=frequencies,
+            n_channels=n_channels,
             stations=stations,
             baselines=baselines,
             n_iterations=n_iterations,
@@ -244,19 +301,19 @@ def run_DDEcal(
             update_speed=update_speed,
         )
         for t in np.arange(0, times.size, n_times)
-        for f in np.arange(0, frequencies.size, n_channels)
     )
 
-    os.makedirs(f"{data_path}/ddecal", exists_ok=True)
-    with open(f"{data_path}/ddecal/convergence.csv", "w") as csvfile:
-        writer = csv.writer(csvfile, delimiter=",")
-        writer.writerow("iteration", "loss")
-        [writer.writerow(i, result) for i, result in enumerate(results)]
+    return results
+    # os.makedirs(f"{data_path}/ddecal", exists_ok=True)
+    # with open(f"{data_path}/ddecal/convergence.csv", "w") as csvfile:
+    #     writer = csv.writer(csvfile, delimiter=",")
+    #     writer.writerow("iteration", "loss")
+    #     [writer.writerow(i, result) for i, result in enumerate(results)]
 
-    with open(f"{data_path}/ddecal/convergence.csv", "w") as csvfile:
-        writer = csv.writer(csvfile, delimiter=",")
-        writer.writerow("iteration", "loss")
-        [writer.writerow(i, result) for i, result in enumerate(results)]
+    # with open(f"{data_path}/ddecal/convergence.csv", "w") as csvfile:
+    #     writer = csv.writer(csvfile, delimiter=",")
+    #     writer.writerow("iteration", "loss")
+    #     [writer.writerow(i, result) for i, result in enumerate(results)]
 
     # parallelize over time
     # alle fsequential per iteratie, dan smoother

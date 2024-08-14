@@ -43,7 +43,7 @@ def predict_model(
 
 
 def _DDEcal_iteration_station(gains, vis_station, coh_station, n_patches):
-    m_chunk = coh_station * gains.T[:, np.newaxis, np.newaxis, :]
+    m_chunk = coh_station * np.conj(gains.T[:, np.newaxis, np.newaxis, :])
 
     # The single letter variables correspond to the matrix names in Gan et al. (2022)
     V = vis_station.swapaxes(0, 2).reshape(
@@ -58,8 +58,8 @@ def _DDEcal_iteration_station(gains, vis_station, coh_station, n_patches):
     # J = J (QR).T ((QR).T)-1 = V ((QR).T)-1 = V (R.TQ.T)-1 = V Q.T-1 R.T-1 = V Q R.T-1
     # Q, R = np.linalg.qr(M)
     # R_inv = solve_triangular(R, np.eye(n_patches), lower=False)
-    pseudoinverse = np.conj(M).T @ np.linalg.inv(M @ np.conj(M).T)
-    return V @ pseudoinverse, np.sum(np.abs(V - gains @ M))
+    new_gains = V @ np.linalg.pinv(M)
+    return new_gains, np.sum(np.abs(V - new_gains @ M) ** 2)
 
 
 def _DDEcal_smooth_frequencies(gains, frequencies, smoothness_scale):

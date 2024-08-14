@@ -6,6 +6,7 @@ from astropy.time import Time, TimeDelta
 from astropy import constants as const
 from beam_errors.array import calculate_array_factor_contribution
 from joblib import Parallel, delayed
+import shutil
 
 
 def get_time_labels(start_time_utc, duration, time_resolution):
@@ -379,3 +380,7 @@ def predict_data(
 
     if SEFD is not None:
         add_thermal_noise(filename, data_path, SEFD)
+    else:
+        shutil.copyfile(
+            f"{data_path}/{filename}/full_model.csv", f"{data_path}/{filename}/data.csv"
+        )

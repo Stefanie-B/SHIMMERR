@@ -71,8 +71,8 @@ class DDEcal:
             t_end - t1
         ) + dt  # one extra, to account for the half timestep a before t1 and after t_end
 
-        info = {"time_resolution": dt.sec, "duration": time_band.sec / 3600}
-        self.time_information = info
+        self.time_resolution = dt.sec
+        self.duration = time_band.sec / 3600
 
     def _set_baseline_length(self):
         p1 = np.array([self.array[station].p for station in self.baselines[:, 0]])
@@ -120,13 +120,13 @@ class DDEcal:
             array=unit_gain_array,
             skymodel=skymodel,
             frequencies=self.frequencies,
-            start_time_utc=self.start_time_utc,
+            start_time_utc=self.times[0],
             filename="calibration_patches",
             data_path=self.data_path,
             time_resolution=self.time_resolution,
             duration=self.duration,
             antenna_mode=self.antenna_mode,
-            basestation=self.basestation,
+            basestation=self.reference_station,
             reuse_tile_beam=True,
         )
 

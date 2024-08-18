@@ -5,7 +5,7 @@ import numpy as np
 from lofarantpos.db import LofarAntennaDatabase
 
 
-def load_array_from_file(filepath, pointing=1 + 0j):
+def load_array_from_file(filepath, pointing_ra=None, pointing_dec=None):
     array = {}
     constructing_station = []
     tile = []
@@ -22,7 +22,9 @@ def load_array_from_file(filepath, pointing=1 + 0j):
                 if len(constructing_station) > 0:
                     # station done
                     full_station = Station(
-                        positions=constructing_station, pointing=pointing
+                        positions=constructing_station,
+                        pointing_ra=pointing_ra,
+                        pointing_dec=pointing_dec,
                     )
                     array[station_name] = full_station
 
@@ -48,13 +50,17 @@ def load_array_from_file(filepath, pointing=1 + 0j):
         constructing_station.append(tile)
     if len(constructing_station) > 0:
         # station done
-        full_station = Station(positions=constructing_station, pointing=pointing)
+        full_station = Station(
+            positions=constructing_station,
+            pointing_ra=pointing_ra,
+            pointing_dec=pointing_dec,
+        )
         array[station_name] = full_station
 
     return array
 
 
-def load_LOFAR(pointing=1 + 0j, mode="EoR"):
+def load_LOFAR(mode="EoR", pointing_ra=None, pointing_dec=None):
     # Dutch, CS, international, EoR (gebruikte NL stations)
     db = LofarAntennaDatabase()
     antpos_stations = sorted(list(db.phase_centres.keys()))
@@ -178,7 +184,9 @@ def load_LOFAR(pointing=1 + 0j, mode="EoR"):
         station_split_in_tiles = dipole_elements_etrs.reshape(-1, 16, 3)
 
         # create and add station object
-        station = Station(station_split_in_tiles)
+        station = Station(
+            station_split_in_tiles, pointing_ra=pointing_ra, pointing_dec=pointing_dec
+        )
         array[station_name] = station
 
     return array

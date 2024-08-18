@@ -394,9 +394,6 @@ class Station:
             ]
             tile.set_element_property("g", antenna_gains)
 
-    def add_spatial_random_gain_drift(self, sigma_tile, sigma_antenna, seed=None):
-        pass
-
     def break_elements(self, mode="maximum", number=0, seed=None):
         """
         Breaks elements within the tiles of the array (by setting their gains to 0). Set the seed for reproducability, but be aware that a different seed should be used for different stations to guarantee randomness.

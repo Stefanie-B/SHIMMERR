@@ -215,7 +215,7 @@ def predict_patch_visibilities(
                 delay = np.squeeze(
                     calculate_array_factor_contribution(
                         station.p_array.reshape(1, 3),
-                        np.array([station.g]),
+                        np.array([1+0j]),
                         k,
                         basestation_directions,
                     )

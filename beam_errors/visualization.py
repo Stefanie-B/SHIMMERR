@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import pandas as pd
 from astropy.time import Time
+import os
 
 
 def get_beam(
@@ -374,3 +375,31 @@ def plot_visibility(
             axs[j, i].set_xticklabels([])
 
     fig.show()
+
+
+def _plot_convergence_component(results, plot_folder, name, mode):
+    plt.figure(figsize=(12, 8))
+    for index, (result_label, result_values) in enumerate(results.items()):
+        for time_step, result in enumerate(result_values):
+            plt.scatter(
+                range(result["n_iter"]),
+                result[mode],
+                color=f"C{index}",
+                label=result_label,
+                alpha=0.5,
+            )
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys())
+    plt.semilogy()
+    plt.grid()
+    os.makedirs(plot_folder, exist_ok=True)
+    plt.xlabel("Iteration")
+    plt.ylabel(mode + r"(Jy$^2$)")
+    plt.savefig(f"{plot_folder}/{mode}_{name}.png")
+
+
+def plot_convergence(results, plot_folder, name):
+    for mode in ["loss", "residuals"]:
+        _plot_convergence_component(results, plot_folder, name, mode)
+

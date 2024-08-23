@@ -7,6 +7,7 @@ from astropy.time import Time
 from joblib import Parallel, delayed
 import pickle
 import os
+from numba import jit
 
 
 class DDEcal:
@@ -186,10 +187,12 @@ class DDEcal:
         amplitudes = np.abs(gains)
         phases = np.angle(gains)
 
-        reference_phase = np.squeeze(phases[:,self.stations==self.reference_station,:])
-        corrected_phases = phases - reference_phase[:,np.newaxis,:]
+        reference_phase = np.squeeze(
+            phases[:, self.stations == self.reference_station, :]
+        )
+        corrected_phases = phases - reference_phase[:, np.newaxis, :]
 
-        corrected_gains = amplitudes * np.exp(1j*corrected_phases)
+        corrected_gains = amplitudes * np.exp(1j * corrected_phases)
         return corrected_gains
 
     def _DDEcal_timeslot(self, visibility, coherency):
@@ -330,14 +333,16 @@ class DDEcal:
             "times": [
                 self.times[t] for t in np.arange(0, self.n_times, self.n_times_per_sol)
             ],
-            "frequencies": np.array([
-                np.mean(
-                    self.frequencies[
-                        i * self.n_freqs_per_sol : (i + 1) * self.n_freqs_per_sol
-                    ]
-                )
-                for i in range(self.n_spectral_sols)
-            ]),
+            "frequencies": np.array(
+                [
+                    np.mean(
+                        self.frequencies[
+                            i * self.n_freqs_per_sol : (i + 1) * self.n_freqs_per_sol
+                        ]
+                    )
+                    for i in range(self.n_spectral_sols)
+                ]
+            ),
             "directions": list(patch_names),
             "stations": self.stations,
         }

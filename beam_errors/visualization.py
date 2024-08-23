@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 import pandas as pd
 from astropy.time import Time
 import os
+import pickle
 
 
 def get_beam(
@@ -403,3 +404,76 @@ def plot_convergence(results, plot_folder, name):
     for mode in ["loss", "residuals"]:
         _plot_convergence_component(results, plot_folder, name, mode)
 
+
+def _make_gain_plot(gains, frequencies, times, stations, mode, savename, **kwargs):
+    if mode == "amplitude":
+        plot_variable = lambda gains, station_number: np.abs(gains[:,:,station_number]).T
+    elif mode == "phase":
+        plot_variable = lambda gains, station_number: np.angle(gains[:,:,station_number]).T
+    else:
+        raise ValueError("Invalid plot mode for gains.")
+
+    fig, ax = plt.subplots(nrows = 7, ncols = 8, figsize = (15,9), sharex = True, sharey = True)
+    ax = np.reshape(ax, (-1))
+
+    times = Time(times)
+    times = (times - times[0]).sec
+    grid_time, grid_freq = np.meshgrid(times/60, frequencies/1e6)
+    # Cycle through stations
+    for station_number, station in enumerate(stations):
+        # Set correct labels, but hide the labels if they overlap with a different panel
+        ax[station_number].set_title(station, y = 1, pad = -14)
+        ax[station_number].set_xlabel('time (min)')
+        ax[station_number].set_ylabel('freq (MHz)')
+        ax[station_number].label_outer()
+        # try:
+        #     ax[station_number].label_outer()
+        # except:
+        #     pass
+                        
+        # Plot the desired quantity in heatmap format
+        im = ax[station_number].pcolormesh(grid_time, grid_freq, plot_variable(gains, station_number), **kwargs)
+
+                # Align panels closely together
+    fig.subplots_adjust(wspace=0)
+    fig.subplots_adjust(hspace=0)
+
+    # add colorbar
+    fig.colorbar(im, ax=ax.ravel().tolist())
+
+    # Save
+    fig.savefig(savename)
+    plt.close('all')
+
+def plot_gains(fname, plot_folder, name, amplitude_lims = [0,2], phase_lims = [-np.pi,np.pi]):
+    with open(fname, "rb") as fp:
+        full_results = pickle.load(fp)
+    with open(f"{fname}_metadata", "rb") as fp:
+        metadata = pickle.load(fp)
+
+    gains = np.array([result["gains"] for result in full_results])# time, freq_sols, stations, dirs
+
+    os.makedirs(f"{plot_folder}/{name}", exist_ok=True)
+    for plot_number, direction in enumerate(metadata["directions"]):
+        _make_gain_plot(
+            gains[:, :, :, plot_number],
+            metadata["frequencies"],
+            metadata["times"],
+            metadata["stations"],
+            mode="amplitude",
+            savename=f"{plot_folder}/{name}/{direction}_amplitude.png",
+            vmin = amplitude_lims[0],
+            vmax = amplitude_lims[1],
+            cmap = "viridis"
+        )
+        _make_gain_plot(
+            gains[:, :, :, plot_number],
+            metadata["frequencies"],
+            metadata["times"],
+            metadata["stations"],
+            mode="phase",
+            savename=f"{plot_folder}/{name}/{direction}_phase.png",
+            vmin = phase_lims[0],
+            vmax = phase_lims[1],
+            cmap = "hsv"
+        )

@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib import animation
 import pandas as pd
 from astropy.time import Time
 import os
@@ -407,34 +408,48 @@ def plot_convergence(results, plot_folder, name):
 
 def _make_gain_plot(gains, frequencies, times, stations, mode, savename, **kwargs):
     if mode == "amplitude":
-        plot_variable = lambda gains, station_number: np.abs(gains[:,:,station_number]).T
+        plot_variable = lambda gains, station_number: np.abs(
+            gains[:, :, station_number]
+        ).T
     elif mode == "phase":
-        plot_variable = lambda gains, station_number: np.angle(gains[:,:,station_number]).T
+        plot_variable = lambda gains, station_number: np.angle(
+            gains[:, :, station_number]
+        ).T
     else:
         raise ValueError("Invalid plot mode for gains.")
 
-    fig, ax = plt.subplots(nrows = 7, ncols = 8, figsize = (15,9), sharex = True, sharey = True)
+    nrows = int(np.sqrt(len(stations)))
+    if nrows * nrows == len(stations):
+        ncols = nrows
+    else:
+        ncols = nrows + 1
+
+    fig, ax = plt.subplots(
+        nrows=nrows, ncols=ncols, figsize=(15, 9), sharex=True, sharey=True
+    )
     ax = np.reshape(ax, (-1))
 
     times = Time(times)
     times = (times - times[0]).sec
-    grid_time, grid_freq = np.meshgrid(times/60, frequencies/1e6)
+    grid_time, grid_freq = np.meshgrid(times / 60, frequencies / 1e6)
     # Cycle through stations
     for station_number, station in enumerate(stations):
         # Set correct labels, but hide the labels if they overlap with a different panel
-        ax[station_number].set_title(station, y = 1, pad = -14)
-        ax[station_number].set_xlabel('time (min)')
-        ax[station_number].set_ylabel('freq (MHz)')
+        ax[station_number].set_title(station, y=1, pad=-14)
+        ax[station_number].set_xlabel("time (min)")
+        ax[station_number].set_ylabel("freq (MHz)")
         ax[station_number].label_outer()
         # try:
         #     ax[station_number].label_outer()
         # except:
         #     pass
-                        
-        # Plot the desired quantity in heatmap format
-        im = ax[station_number].pcolormesh(grid_time, grid_freq, plot_variable(gains, station_number), **kwargs)
 
-                # Align panels closely together
+        # Plot the desired quantity in heatmap format
+        im = ax[station_number].pcolormesh(
+            grid_time, grid_freq, plot_variable(gains, station_number), **kwargs
+        )
+
+        # Align panels closely together
     fig.subplots_adjust(wspace=0)
     fig.subplots_adjust(hspace=0)
 
@@ -443,15 +458,36 @@ def _make_gain_plot(gains, frequencies, times, stations, mode, savename, **kwarg
 
     # Save
     fig.savefig(savename)
-    plt.close('all')
+    plt.close("all")
 
-def plot_gains(fname, plot_folder, name, amplitude_lims = [0,2], phase_lims = [-np.pi,np.pi]):
+
+def _make_gains_gif(gain_folder, metadata, mode):
+    fig = plt.figure(figsize=(15, 9))
+    plt.axis("off")
+
+    img_list = []
+    for direction in metadata["directions"]:
+        fname = f"{gain_folder}/{direction}_{mode}.png"
+        file = plt.imread(fname)
+        img_list.append([plt.imshow(file)])
+        plt.title(direction)
+    video_name = f"{gain_folder}/{mode}.gif"
+
+    ani = animation.ArtistAnimation(fig, img_list, blit=True, repeat_delay=1000)
+    ani.save(video_name, fps=1, dpi=100)
+
+
+def plot_gains(
+    fname, plot_folder, name, amplitude_lims=[0, 2], phase_lims=[-np.pi, np.pi]
+):
     with open(fname, "rb") as fp:
         full_results = pickle.load(fp)
     with open(f"{fname}_metadata", "rb") as fp:
         metadata = pickle.load(fp)
 
-    gains = np.array([result["gains"] for result in full_results])# time, freq_sols, stations, dirs
+    gains = np.array(
+        [result["gains"] for result in full_results]
+    )  # time, freq_sols, stations, dirs
 
     os.makedirs(f"{plot_folder}/{name}", exist_ok=True)
     for plot_number, direction in enumerate(metadata["directions"]):
@@ -462,9 +498,9 @@ def plot_gains(fname, plot_folder, name, amplitude_lims = [0,2], phase_lims = [-
             metadata["stations"],
             mode="amplitude",
             savename=f"{plot_folder}/{name}/{direction}_amplitude.png",
-            vmin = amplitude_lims[0],
-            vmax = amplitude_lims[1],
-            cmap = "viridis"
+            vmin=amplitude_lims[0],
+            vmax=amplitude_lims[1],
+            cmap="viridis",
         )
         _make_gain_plot(
             gains[:, :, :, plot_number],
@@ -473,7 +509,9 @@ def plot_gains(fname, plot_folder, name, amplitude_lims = [0,2], phase_lims = [-
             metadata["stations"],
             mode="phase",
             savename=f"{plot_folder}/{name}/{direction}_phase.png",
-            vmin = phase_lims[0],
-            vmax = phase_lims[1],
-            cmap = "hsv"
+            vmin=phase_lims[0],
+            vmax=phase_lims[1],
+            cmap="hsv",
         )
+    _make_gains_gif(f"{plot_folder}/{name}", metadata, "amplitude")
+    _make_gains_gif(f"{plot_folder}/{name}", metadata, "phase")

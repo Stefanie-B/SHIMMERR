@@ -20,7 +20,6 @@ class DDEcal:
         tolerance=1e-6,
         update_speed=0.2,
         smoothness_scale=4e6,
-        reweight_mode=None,
     ):
         self.array = array
         self.n_stations = len(array)
@@ -33,7 +32,6 @@ class DDEcal:
         self.tolerance = tolerance
         self.update_speed = update_speed
         self.smoothness_scale = smoothness_scale
-        self.reweight_mode = reweight_mode
 
         if not 0 < self.update_speed <= 1:
             raise ValueError(
@@ -48,19 +46,6 @@ class DDEcal:
                 np.abs(new_gains - gains)
             ) / (1 - self.update_speed)
 
-        if self.reweight_mode == "abs":
-            self._reweight_function = lambda coherency: np.sum(
-                np.abs(coherency), axis=(1, 2, 3)
-            )
-        elif reweight_mode == "squared":
-            self._reweight_function = lambda coherency: np.sum(
-                np.abs(coherency) ** 2, axis=(1, 2, 3)
-            )
-        elif reweight_mode is None or reweight_mode == "none":
-            self._reweight_function = lambda coherency: np.ones(coherency.shape[0])
-        else:
-            raise ValueError("Invalid reweight mode")
-
     def _set_time_info(self):
         t1 = Time(self.times[0])
         t2 = Time(self.times[1])
@@ -68,8 +53,8 @@ class DDEcal:
 
         dt = t2 - t1
         time_band = (
-            t_end - t1
-        ) + dt  # one extra, to account for the half timestep a before t1 and after t_end
+            (t_end - t1) + dt
+        )  # one extra, to account for the half timestep a before t1 and after t_end
 
         self.time_resolution = dt.sec
         self.duration = time_band.sec / 3600
@@ -182,9 +167,15 @@ class DDEcal:
                 kernel[:, None, None] * weights[mask, :, :], axis=0
             )
 
-            convolved_weights[convolved_weights == 0] = (
-                np.nan
-            )  # can't smooth with zero weigths
+            # convolved_weights[convolved_weights == 0] = (
+            #     np.nan
+            # )  # can't smooth with zero weigths
+            if np.sum(convolved_weights == 0) > 0:
+                print(
+                    f"There are now {np.sum(convolved_weights==0)} ill-defined weights, replacing the gains with zeros"
+                )
+                convolved_gains[np.where(convolved_weights == 0)] = 0
+                convolved_weights[np.where(convolved_weights == 0)] = 1
 
             smoothed_gains[i, :, :] = convolved_gains / convolved_weights
         return smoothed_gains
@@ -213,16 +204,14 @@ class DDEcal:
                             gains=gains[f, :, :],
                             visibility=visibility[
                                 :,
-                                f
-                                * self.n_freqs_per_sol : (f + 1)
+                                f * self.n_freqs_per_sol : (f + 1)
                                 * self.n_freqs_per_sol,
                                 self.bl_mask[i, :],
                             ],
                             coherency=coherency[
                                 :,
                                 :,
-                                f
-                                * self.n_freqs_per_sol : (f + 1)
+                                f * self.n_freqs_per_sol : (f + 1)
                                 * self.n_freqs_per_sol,
                                 self.bl_mask[i, :],
                             ],
@@ -251,8 +240,27 @@ class DDEcal:
         loss[iteration + 1 :] = np.nan
         return {"gains": gains, "residuals": residuals, "loss": loss}
 
-    def run_DDEcal(self, visibility_file, skymodel, reuse_predict=False):
+    def run_DDEcal(
+        self,
+        visibility_file,
+        skymodel,
+        reuse_predict=False,
+        reweight_mode=None,
+    ):
         self.data_path = "/".join(visibility_file.split("/")[:-1])
+
+        if reweight_mode == "abs":
+            self._reweight_function = lambda coherency: np.sum(
+                np.abs(coherency), axis=(1, 2, 3)
+            )
+        elif reweight_mode == "squared":
+            self._reweight_function = lambda coherency: np.sum(
+                np.abs(coherency) ** 2, axis=(1, 2, 3)
+            )
+        elif reweight_mode is None or reweight_mode == "none":
+            self._reweight_function = lambda coherency: np.ones(coherency.shape[0])
+        else:
+            raise ValueError("Invalid reweight mode")
 
         # parse visibility
         visibilities = self._read_data(visibility_file, True)

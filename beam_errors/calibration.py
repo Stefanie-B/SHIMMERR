@@ -182,6 +182,16 @@ class DDEcal:
             smoothed_gains[i, :, :] = convolved_gains / convolved_weights
         return smoothed_gains
 
+    def _remove_unitairy_ambiguity(self, gains):
+        amplitudes = np.abs(gains)
+        phases = np.angle(gains)
+
+        reference_phase = np.squeeze(phases[:,self.stations==self.reference_station,:])
+        corrected_phases = phases - reference_phase[:,np.newaxis,:]
+
+        corrected_gains = amplitudes * np.exp(1j*corrected_phases)
+        return corrected_gains
+
     def _DDEcal_timeslot(self, visibility, coherency):
         gains = np.ones([self.n_spectral_sols, self.n_stations, self.n_patches]).astype(
             complex
@@ -238,6 +248,7 @@ class DDEcal:
             ) * gains + self.update_speed * smoothed_gain_update
 
             iteration += 1
+        gains = self._remove_unitairy_ambiguity(gains)
         return {
             "gains": gains,
             "residuals": residuals,

@@ -5,6 +5,8 @@ import numpy as np
 from astropy import constants as const
 from astropy.time import Time
 from joblib import Parallel, delayed
+import pickle
+import os
 
 
 class DDEcal:
@@ -236,9 +238,12 @@ class DDEcal:
             ) * gains + self.update_speed * smoothed_gain_update
 
             iteration += 1
-        residuals[iteration + 1 :] = np.nan
-        loss[iteration + 1 :] = np.nan
-        return {"gains": gains, "residuals": residuals, "loss": loss}
+        return {
+            "gains": gains,
+            "residuals": residuals,
+            "loss": loss,
+            "n_iter": iteration,
+        }
 
     def run_DDEcal(
         self,
@@ -246,6 +251,7 @@ class DDEcal:
         skymodel,
         reuse_predict=False,
         reweight_mode=None,
+        fname=None,
     ):
         self.data_path = "/".join(visibility_file.split("/")[:-1])
 
@@ -306,5 +312,31 @@ class DDEcal:
             )
             for t in np.arange(0, self.n_times, self.n_times_per_sol)
         )
+
+        metadata = {
+            "smoothness_scale": self.smoothness_scale,
+            "times": [
+                self.times[t] for t in np.arange(0, self.n_times, self.n_times_per_sol)
+            ],
+            "frequencies": np.array([
+                np.mean(
+                    self.frequencies[
+                        i * self.n_freqs_per_sol : (i + 1) * self.n_freqs_per_sol
+                    ]
+                )
+                for i in range(self.n_spectral_sols)
+            ]),
+            "directions": list(patch_names),
+            "stations": self.stations,
+        }
+
+        if fname is None:
+            fname = f"Calibration_results_{reweight_mode}_{int(self.smoothness_scale)}"
+
+        os.makedirs(f"{self.data_path}/calibration_results/", exist_ok=True)
+        with open(f"{self.data_path}/calibration_results/{fname}", "wb") as fp:
+            pickle.dump(results, fp)
+        with open(f"{self.data_path}/calibration_results/{fname}_metadata", "wb") as fp:
+            pickle.dump(metadata, fp)
 
         return results

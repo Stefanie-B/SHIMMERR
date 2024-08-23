@@ -249,6 +249,7 @@ class DDEcal:
 
             iteration += 1
         gains = self._remove_unitairy_ambiguity(gains)
+        residuals /= visibility.size
         return {
             "gains": gains,
             "residuals": residuals,

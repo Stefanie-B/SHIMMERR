@@ -406,7 +406,9 @@ def plot_convergence(results, plot_folder, name):
         _plot_convergence_component(results, plot_folder, name, mode)
 
 
-def _make_gain_plot(gains, frequencies, times, stations, mode, savename, **kwargs):
+def _make_gain_plot(
+    gains, direction, frequencies, times, stations, mode, savename, **kwargs
+):
     if mode == "amplitude":
         plot_variable = lambda gains, station_number: np.abs(
             gains[:, :, station_number]
@@ -453,6 +455,8 @@ def _make_gain_plot(gains, frequencies, times, stations, mode, savename, **kwarg
     fig.subplots_adjust(wspace=0)
     fig.subplots_adjust(hspace=0)
 
+    fig.suptitle(direction)
+
     # add colorbar
     fig.colorbar(im, ax=ax.ravel().tolist())
 
@@ -462,15 +466,16 @@ def _make_gain_plot(gains, frequencies, times, stations, mode, savename, **kwarg
 
 
 def _make_gains_gif(gain_folder, metadata, mode):
-    fig = plt.figure(figsize=(15, 9))
+    fig = plt.figure(figsize=(15, 9), dpi=300)
     plt.axis("off")
+    fig.tight_layout()
 
     img_list = []
     for direction in metadata["directions"]:
         fname = f"{gain_folder}/{direction}_{mode}.png"
         file = plt.imread(fname)
-        img_list.append([plt.imshow(file)])
-        plt.title(direction)
+        img = plt.imshow(file)
+        img_list.append([img])
     video_name = f"{gain_folder}/{mode}.gif"
 
     ani = animation.ArtistAnimation(fig, img_list, blit=True, repeat_delay=1000)
@@ -493,6 +498,7 @@ def plot_gains(
     for plot_number, direction in enumerate(metadata["directions"]):
         _make_gain_plot(
             gains[:, :, :, plot_number],
+            direction,
             metadata["frequencies"],
             metadata["times"],
             metadata["stations"],
@@ -504,6 +510,78 @@ def plot_gains(
         )
         _make_gain_plot(
             gains[:, :, :, plot_number],
+            direction,
+            metadata["frequencies"],
+            metadata["times"],
+            metadata["stations"],
+            mode="phase",
+            savename=f"{plot_folder}/{name}/{direction}_phase.png",
+            vmin=phase_lims[0],
+            vmax=phase_lims[1],
+            cmap="hsv",
+        )
+    _make_gains_gif(f"{plot_folder}/{name}", metadata, "amplitude")
+    _make_gains_gif(f"{plot_folder}/{name}", metadata, "phase")
+
+
+def plot_gain_error(
+    fname_gains,
+    fname_true_gains,
+    plot_folder,
+    name,
+    reference_station="CS002HBA0",
+    amplitude_lims=[0, 2],
+    phase_lims=[-np.pi, np.pi],
+):
+    with open(fname_gains, "rb") as fp:
+        full_results = pickle.load(fp)
+    estimated_gains = np.array(
+        [result["gains"] for result in full_results]
+    )  # time, freq_sols, stations, dirs
+
+    with open(fname_true_gains, "rb") as fp:
+        full_results = pickle.load(fp)
+    with open(f"{fname_true_gains}_metadata", "rb") as fp:
+        metadata = pickle.load(fp)
+    true_gains = np.array(
+        [result["gains"] for result in full_results]
+    )  # time, freq_sols, stations, dirs
+
+    if reference_station is not None:
+        amplitudes = np.abs(true_gains)
+        phases = np.angle(true_gains)
+
+        reference_phases = np.squeeze(
+            phases[:, :, metadata["stations"] == reference_station, :]
+        )
+        phases -= reference_phases[:, :, np.newaxis, :]
+        true_gains = amplitudes * np.exp(1j * phases)
+
+    temporal_resolution_factor = true_gains.shape[0] // estimated_gains.shape[0]
+    spectral_resolution_factor = true_gains.shape[1] // estimated_gains.shape[1]
+
+    expanded_gains = estimated_gains.repeat(temporal_resolution_factor, axis=0).repeat(
+        spectral_resolution_factor, axis=1
+    )
+    plot_gains = expanded_gains / true_gains
+
+    os.makedirs(f"{plot_folder}/{name}", exist_ok=True)
+    for plot_number, direction in enumerate(metadata["directions"]):
+        _make_gain_plot(
+            plot_gains[:, :, :, plot_number],
+            direction,
+            metadata["frequencies"],
+            metadata["times"],
+            metadata["stations"],
+            mode="amplitude",
+            savename=f"{plot_folder}/{name}/{direction}_amplitude.png",
+            vmin=amplitude_lims[0],
+            vmax=amplitude_lims[1],
+            cmap="viridis",
+        )
+        _make_gain_plot(
+            plot_gains[:, :, :, plot_number],
+            direction,
             metadata["frequencies"],
             metadata["times"],
             metadata["stations"],

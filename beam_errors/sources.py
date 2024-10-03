@@ -98,7 +98,6 @@ class Patch:
 
 class Skymodel:
     def __init__(self, filename):
-
         self.elements = {}
         with open(filename, "r") as f:
             self.parse_formatstring(f.readline())
@@ -136,7 +135,7 @@ class Skymodel:
                     try:
                         reference_frequency = float(get_item("referencefrequency"))
                     except ValueError:
-                        reference_frequency = get_item("default_referencefrequency")
+                        reference_frequency = self.items["default_referencefrequency"]
 
                     # Fill in whether the spectral index is logarithmic
                     try:

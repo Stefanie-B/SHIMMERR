@@ -420,11 +420,11 @@ def _make_gain_plot(
     else:
         raise ValueError("Invalid plot mode for gains.")
 
-    nrows = int(np.sqrt(len(stations)))
-    if nrows * nrows == len(stations):
-        ncols = nrows
+    ncols = int(np.ceil(np.sqrt(len(stations))))
+    if ncols * (ncols - 1) < len(stations):
+        nrows = ncols
     else:
-        ncols = nrows + 1
+        nrows = ncols - 1
 
     fig, ax = plt.subplots(
         nrows=nrows, ncols=ncols, figsize=(15, 9), sharex=True, sharey=True
@@ -433,7 +433,11 @@ def _make_gain_plot(
 
     times = Time(times)
     times = (times - times[0]).sec
-    grid_time, grid_freq = np.meshgrid(times / 60, frequencies / 1e6)
+    if len(times) == 1:
+        grid_time, grid_freq = np.meshgrid([times[0], times[0] + 1], frequencies / 1e6)
+    else:
+        grid_time, grid_freq = np.meshgrid(times, frequencies / 1e6)
+
     # Cycle through stations
     for station_number, station in enumerate(stations):
         # Set correct labels, but hide the labels if they overlap with a different panel
@@ -441,17 +445,26 @@ def _make_gain_plot(
         ax[station_number].set_xlabel("time (min)")
         ax[station_number].set_ylabel("freq (MHz)")
         ax[station_number].label_outer()
-        # try:
-        #     ax[station_number].label_outer()
-        # except:
-        #     pass
 
-        # Plot the desired quantity in heatmap format
-        im = ax[station_number].pcolormesh(
-            grid_time, grid_freq, plot_variable(gains, station_number), **kwargs
-        )
+        if len(times) == 1:
+            # Plot the desired quantity in heatmap format
+            im = ax[station_number].pcolormesh(
+                grid_time,
+                grid_freq,
+                plot_variable(gains, station_number).repeat(2, 1),
+                shading="nearest",
+                **kwargs,
+            )
+        else:
+            # Plot the desired quantity in heatmap format
+            im = ax[station_number].pcolormesh(
+                grid_time,
+                grid_freq,
+                plot_variable(gains, station_number),
+                **kwargs,
+            )
 
-        # Align panels closely together
+    # Align panels closely together
     fig.subplots_adjust(wspace=0)
     fig.subplots_adjust(hspace=0)
 
@@ -577,7 +590,7 @@ def plot_gain_error(
             savename=f"{plot_folder}/{name}/{direction}_amplitude.png",
             vmin=amplitude_lims[0],
             vmax=amplitude_lims[1],
-            cmap="viridis",
+            cmap="bwr",
         )
         _make_gain_plot(
             plot_gains[:, :, :, plot_number],

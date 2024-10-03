@@ -41,11 +41,11 @@ class DDEcal:
                 f"An update speed of {update_speed} is not permissible. Please choose a value larger than 0 and less than or equal to 1."
             )
         elif self.update_speed == 1:
-            self._change_rate = lambda gains, new_gains: np.sum(
+            self._change_rate = lambda gains, new_gains: np.mean(
                 np.abs(new_gains - gains)
             )
         else:
-            self._change_rate = lambda gains, new_gains: np.sum(
+            self._change_rate = lambda gains, new_gains: np.mean(
                 np.abs(new_gains - gains)
             ) / (1 - self.update_speed)
 
@@ -122,15 +122,19 @@ class DDEcal:
         m_chunk = coherency * np.conj(gains.T[:, np.newaxis, np.newaxis, :])
 
         # The single letter variables correspond to the matrix names in Gan et al. (2022)
-        # We swap the frequency and station axes to get station to the front and then flatten to the desired shapes
+        # We swap the temporal and station axes to get station to the front and then flatten to the desired shapes
         V = visibility.swapaxes(0, 2).reshape(1, -1)
         M = m_chunk.swapaxes(1, 3).reshape(self.n_patches, -1)
 
+        # Remove flagged data
+        mask = np.squeeze(~np.isnan(V))
+        V = V[:, mask]
+        M = M[:, mask]
+
         # Solve V = JM
-        new_gains = V @ np.linalg.pinv(M)
+        new_gains, loss = np.linalg.lstsq(M.T, V.T, rcond=-1)[:2]
         last_residual = np.sum(np.abs(V - gains @ M) ** 2)
-        loss = np.sum(np.abs(V - new_gains @ M) ** 2)
-        return new_gains, last_residual, loss
+        return np.squeeze(new_gains), last_residual, np.squeeze(loss)
 
     def _DDEcal_smooth_frequencies(self, gains, weights):
         """
@@ -188,12 +192,19 @@ class DDEcal:
         phases = np.angle(gains)
 
         reference_phase = np.squeeze(
-            phases[:, self.stations == self.reference_station, :]
+            phases[:, self.stations == self.reference_station, :], axis=1
         )
         corrected_phases = phases - reference_phase[:, np.newaxis, :]
 
         corrected_gains = amplitudes * np.exp(1j * corrected_phases)
         return corrected_gains
+
+    def _select_baseline_data(self, data, station_number):
+        selected_data = data[..., self.baseline_mask[station_number, :]]
+        selected_data[..., :station_number] = np.conj(
+            selected_data[..., :station_number]
+        )
+        return selected_data
 
     def _DDEcal_timeslot(self, visibility, coherency):
         gains = np.ones([self.n_spectral_sols, self.n_stations, self.n_patches]).astype(
@@ -212,51 +223,48 @@ class DDEcal:
         ):
             weights = np.zeros_like(gains, dtype=float)
             for i, station in enumerate(self.stations):
+                selected_visibilities = self._select_baseline_data(visibility, i)
+                selected_coherencies = self._select_baseline_data(coherency, i)
                 for f in range(self.n_spectral_sols):
                     # Give the visibilities for the frequencies in this slot and the baselines connected to this station
+                    selected_frequencies = range(
+                        f * self.n_freqs_per_sol, (f + 1) * self.n_freqs_per_sol
+                    )
                     new_gains[f, i, :], new_residual, new_loss = (
                         self._DDEcal_station_iteration(
                             gains=gains[f, :, :],
-                            visibility=visibility[
-                                :,
-                                f * self.n_freqs_per_sol : (f + 1)
-                                * self.n_freqs_per_sol,
-                                self.bl_mask[i, :],
-                            ],
-                            coherency=coherency[
-                                :,
-                                :,
-                                f * self.n_freqs_per_sol : (f + 1)
-                                * self.n_freqs_per_sol,
-                                self.bl_mask[i, :],
-                            ],
+                            visibility=np.take(
+                                selected_visibilities,
+                                indices=selected_frequencies,
+                                axis=1,
+                            ),
+                            coherency=np.take(
+                                selected_coherencies,
+                                indices=selected_frequencies,
+                                axis=2,
+                            ),
                         )
                     )
                     residuals[iteration] += new_residual
                     loss[iteration] += new_loss
-                    weights[f, i, :] = self._reweight_function(
-                        coherency[
-                            :,
-                            :,
-                            f * self.n_freqs_per_sol : (f + 1) * self.n_freqs_per_sol,
-                            self.bl_mask[i, :],
-                        ]
-                    )
-            smoothed_gain_update = self._DDEcal_smooth_frequencies(
-                gains=new_gains,
+                    weights[f, i, :] = self._reweight_function(selected_coherencies)
+
+            gain_update = (
+                1 - self.update_speed
+            ) * gains + self.update_speed * new_gains
+
+            gains = self._DDEcal_smooth_frequencies(
+                gains=gain_update,
                 weights=weights,
             )
-            gains = (
-                1 - self.update_speed
-            ) * gains + self.update_speed * smoothed_gain_update
 
             iteration += 1
         gains = self._remove_unitairy_ambiguity(gains)
         residuals /= visibility.size
         return {
             "gains": gains,
-            "residuals": residuals,
-            "loss": loss,
+            "residuals": residuals[:iteration],
+            "loss": loss[:iteration],
             "n_iter": iteration,
         }
 
@@ -287,7 +295,7 @@ class DDEcal:
         visibilities = self._read_data(visibility_file, True)
 
         self._run_preflagger()
-        visibilities[:, self.flag_mask] = 0
+        visibilities[:, self.flag_mask] = np.nan
 
         # t,bl,f
         # 1 chunk en dat alle t,f dan bl
@@ -306,12 +314,12 @@ class DDEcal:
         coherency = np.array(coherency)
         if self.n_patches == 1:
             coherency.reshape(1, self.n_times, self.n_freqs, self.n_baselines)
-        coherency[:, :, self.flag_mask] = 0
+        coherency[:, :, self.flag_mask] = np.nan
 
         # select which rows of the visibility matrix will be active for each station (baseline mask)
-        self.bl_mask = np.ones([self.n_stations, self.n_baselines]).astype(bool)
+        self.baseline_mask = np.ones([self.n_stations, self.n_baselines]).astype(bool)
         for i, station in enumerate(self.stations):
-            self.bl_mask[i, :] = (self.baselines[:, 0] == station) | (
+            self.baseline_mask[i, :] = (self.baselines[:, 0] == station) | (
                 self.baselines[:, 1] == station
             )
 

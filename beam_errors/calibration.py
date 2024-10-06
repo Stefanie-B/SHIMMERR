@@ -7,7 +7,8 @@ from astropy.time import Time
 from joblib import Parallel, delayed
 import pickle
 import os
-from numba import jit
+import jax
+import jax.numpy as jnp
 
 
 class DDEcal:
@@ -118,7 +119,7 @@ class DDEcal:
             reuse_tile_beam=True,
         )
 
-    def _DDEcal_station_iteration(self, gains, visibility, coherency):
+    def _DDEcal_station_iteration_old(self, gains, visibility, coherency):
         m_chunk = coherency * np.conj(gains.T[:, np.newaxis, np.newaxis, :])
 
         # The single letter variables correspond to the matrix names in Gan et al. (2022)
@@ -132,9 +133,26 @@ class DDEcal:
         M = M[:, mask]
 
         # Solve V = JM
-        new_gains, loss = np.linalg.lstsq(M.T, V.T, rcond=-1)[:2]
+        new_gains, loss, _, _ = np.linalg.lstsq(M.T, V.T, rcond=-1)
         last_residual = np.sum(np.abs(V - gains @ M) ** 2)
-        return np.squeeze(new_gains), last_residual, np.squeeze(loss)
+        return np.squeeze(new_gains), last_residual, np.sum(np.squeeze(loss))
+
+    @staticmethod
+    @jax.jit
+    def _DDEcal_station_iteration(gains, visibility, coherency):
+        # Replace np with jnp (JAX NumPy)
+        m_chunk = coherency * jnp.conj(gains.T[:, jnp.newaxis, jnp.newaxis, :])
+
+        # Replace swapaxes with JAX-compatible transpose
+        V = jnp.transpose(visibility, (2, 1, 0)).reshape(1, -1)
+        M = jnp.transpose(m_chunk, (0, 3, 2, 1)).reshape(coherency.shape[0], -1)
+
+        # Solve V = JM using JAX's least squares solver
+        new_gains, loss, _, _ = jax.numpy.linalg.lstsq(M.T, V.T, rcond=-1)
+
+        last_residual = jnp.sum(jnp.abs(V - gains @ M) ** 2)
+
+        return jnp.squeeze(new_gains), last_residual, jnp.squeeze(loss)
 
     def _DDEcal_smooth_frequencies(self, gains, weights):
         """
@@ -295,7 +313,11 @@ class DDEcal:
         visibilities = self._read_data(visibility_file, True)
 
         self._run_preflagger()
-        visibilities[:, self.flag_mask] = np.nan
+        # We flag by setting the values to zero, because this allows us to give them zero weight
+        # without needing to alter the shape of any of the matrices in the calculations (which
+        # would be the case if we fully removed the values. This allows for pre-compilation of the
+        # inner DDEcal update step and makes the process faster.
+        visibilities[:, self.flag_mask] = 0
 
         # t,bl,f
         # 1 chunk en dat alle t,f dan bl
@@ -314,7 +336,7 @@ class DDEcal:
         coherency = np.array(coherency)
         if self.n_patches == 1:
             coherency.reshape(1, self.n_times, self.n_freqs, self.n_baselines)
-        coherency[:, :, self.flag_mask] = np.nan
+        coherency[:, :, self.flag_mask] = 0
 
         # select which rows of the visibility matrix will be active for each station (baseline mask)
         self.baseline_mask = np.ones([self.n_stations, self.n_baselines]).astype(bool)

@@ -134,7 +134,7 @@ class DDEcal:
         # Solve V = JM
         new_gains, loss = np.linalg.lstsq(M.T, V.T, rcond=-1)[:2]
         last_residual = np.sum(np.abs(V - gains @ M) ** 2)
-        return np.squeeze(new_gains), last_residual, np.squeeze(loss)
+        return np.squeeze(new_gains), last_residual, np.sum(loss)
 
     def _DDEcal_smooth_frequencies(self, gains, weights):
         """
@@ -279,15 +279,17 @@ class DDEcal:
         self.data_path = "/".join(visibility_file.split("/")[:-1])
 
         if reweight_mode == "abs":
-            self._reweight_function = lambda coherency: np.sum(
+            self._reweight_function = lambda coherency: np.nansum(
                 np.abs(coherency), axis=(1, 2, 3)
             )
         elif reweight_mode == "squared":
-            self._reweight_function = lambda coherency: np.sum(
+            self._reweight_function = lambda coherency: np.nansum(
                 np.abs(coherency) ** 2, axis=(1, 2, 3)
             )
         elif reweight_mode is None or reweight_mode == "none":
-            self._reweight_function = lambda coherency: np.ones(coherency.shape[0])
+            self._reweight_function = lambda coherency: np.sum(
+                ~np.isnan(coherency), axis=(1, 2, 3)
+            )
         else:
             raise ValueError("Invalid reweight mode")
 

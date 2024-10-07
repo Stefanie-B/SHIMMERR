@@ -211,20 +211,28 @@ class DDEcal:
             complex
         )
 
+        selected_visibilities = [
+            self._select_baseline_data(visibility, i) for i in range(self.n_stations)
+        ]
+        selected_coherencies = [
+            self._select_baseline_data(coherency, i) for i in range(self.n_stations)
+        ]
+        del visibility, coherency
+        weights = np.zeros_like(gains, dtype=float)
+        for i in range(self.n_stations):
+            for f in range(self.n_spectral_sols):
+                weights[f, i, :] = self._reweight_function(selected_coherencies[i])
+
         new_gains = np.zeros_like(gains)
         iteration = 0
 
         residuals = np.zeros(self.n_iterations)
         loss = np.zeros(self.n_iterations)
-
         while (
             iteration < self.n_iterations
             and self._change_rate(gains, new_gains) > self.tolerance
         ):
-            weights = np.zeros_like(gains, dtype=float)
             for i, station in enumerate(self.stations):
-                selected_visibilities = self._select_baseline_data(visibility, i)
-                selected_coherencies = self._select_baseline_data(coherency, i)
                 for f in range(self.n_spectral_sols):
                     # Give the visibilities for the frequencies in this slot and the baselines connected to this station
                     selected_frequencies = range(
@@ -234,12 +242,12 @@ class DDEcal:
                         self._DDEcal_station_iteration(
                             gains=gains[f, :, :],
                             visibility=np.take(
-                                selected_visibilities,
+                                selected_visibilities[i],
                                 indices=selected_frequencies,
                                 axis=1,
                             ),
                             coherency=np.take(
-                                selected_coherencies,
+                                selected_coherencies[i],
                                 indices=selected_frequencies,
                                 axis=2,
                             ),
@@ -248,7 +256,6 @@ class DDEcal:
                     )
                     residuals[iteration] += new_residual
                     loss[iteration] += new_loss
-                    weights[f, i, :] = self._reweight_function(selected_coherencies)
 
             gain_update = (
                 1 - self.update_speed
@@ -261,7 +268,6 @@ class DDEcal:
 
             iteration += 1
         gains = self._remove_unitairy_ambiguity(gains)
-        residuals /= visibility.size
         return {
             "gains": gains,
             "residuals": residuals[:iteration],

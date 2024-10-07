@@ -118,7 +118,7 @@ class DDEcal:
             reuse_tile_beam=True,
         )
 
-    def _DDEcal_station_iteration(self, gains, visibility, coherency):
+    def _DDEcal_station_iteration(self, gains, visibility, coherency, station_number):
         m_chunk = coherency * np.conj(gains.T[:, np.newaxis, np.newaxis, :])
 
         # The single letter variables correspond to the matrix names in Gan et al. (2022)
@@ -133,7 +133,7 @@ class DDEcal:
 
         # Solve V = JM
         new_gains, loss = np.linalg.lstsq(M.T, V.T, rcond=-1)[:2]
-        last_residual = np.sum(np.abs(V - gains @ M) ** 2)
+        last_residual = np.sum(np.abs(V - gains[station_number, :] @ M) ** 2)
         return np.squeeze(new_gains), last_residual, np.sum(loss)
 
     def _DDEcal_smooth_frequencies(self, gains, weights):
@@ -243,6 +243,7 @@ class DDEcal:
                                 indices=selected_frequencies,
                                 axis=2,
                             ),
+                            station_number=i,
                         )
                     )
                     residuals[iteration] += new_residual

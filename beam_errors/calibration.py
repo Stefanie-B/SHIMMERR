@@ -7,7 +7,6 @@ from astropy.time import Time
 from joblib import Parallel, delayed
 import pickle
 import os
-from numba import jit
 
 
 class DDEcal:
@@ -74,6 +73,12 @@ class DDEcal:
         if update_metadata:
             self.frequencies = np.unique([float(row["frequency"]) for row in data])
             self.n_freqs = len(self.frequencies)
+
+            # Set the number of spectral solutions
+            self.n_spectral_sols = self.n_freqs // self.n_freqs_per_sol
+            if self.n_spectral_sols * self.n_freqs_per_sol < self.n_freqs:
+                self.n_spectral_sols += 1  # last frequency slot has smaller set of data
+
             self.times = np.unique([row["time"] for row in data])
             self.n_times = len(self.times)
             self._set_time_info()
@@ -221,8 +226,12 @@ class DDEcal:
         weights = np.zeros_like(gains, dtype=float)
         for i in range(self.n_stations):
             for f in range(self.n_spectral_sols):
-                weights[f, i, :] = self._reweight_function(selected_coherencies[i])
-
+                selected_frequencies = range(
+                    f * self.n_freqs_per_sol, (f + 1) * self.n_freqs_per_sol
+                )
+                weights[f, i, :] = self._reweight_function(
+                    selected_coherencies[i][:, :, selected_frequencies, :]
+                )
         new_gains = np.zeros_like(gains)
         iteration = 0
 
@@ -275,6 +284,46 @@ class DDEcal:
             "n_iter": iteration,
         }
 
+    def _subtract_timeslot(self, visibility, coherency, gain):
+        subtractor = coherency.copy()
+        for i, station in enumerate(self.stations):
+            for f in range(self.n_spectral_sols):
+                # Give the visibilities for the frequencies in this slot and the baselines connected to this station
+                selected_frequencies = range(
+                    f * self.n_freqs_per_sol, (f + 1) * self.n_freqs_per_sol
+                )
+
+                left_selection = self.baselines[:, 0] == station
+                right_selection = self.baselines[:, 1] == station
+
+                ndim = len(coherency[:, :, selected_frequencies, left_selection].shape)
+                applied_gain = gain[f, i, :].reshape(-1, *([1] * (ndim - 1)))
+
+                subtractor[:, :, selected_frequencies, left_selection] *= applied_gain
+                subtractor[:, :, selected_frequencies, right_selection] *= np.conj(
+                    applied_gain
+                )
+
+        return visibility - np.sum(subtractor, axis=0)
+
+    def _write_visibility(self, visibility, fname):
+        os.makedirs("/".join(fname.split("/")[:-1]), exist_ok=True)
+        with open(fname, "w") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["time", "frequency", "baseline", "visibility"])
+            dataset = [
+                [
+                    self.times[t],
+                    self.frequencies[f],
+                    "-".join(self.baselines[i]),
+                    visibility[t, f, i],
+                ]
+                for t in range(self.n_times)
+                for f in range(self.n_freqs)
+                for i in range(self.n_baselines)
+            ]
+            writer.writerows(dataset)
+
     def run_DDEcal(
         self,
         visibility_file,
@@ -282,6 +331,7 @@ class DDEcal:
         reuse_predict=False,
         reweight_mode=None,
         fname=None,
+        calculate_residual=True,
     ):
         self.data_path = "/".join(visibility_file.split("/")[:-1])
 
@@ -304,6 +354,8 @@ class DDEcal:
         visibilities = self._read_data(visibility_file, True)
 
         self._run_preflagger()
+        if calculate_residual:
+            flagged_visibilities = visibilities[:, self.flag_mask]
         visibilities[:, self.flag_mask] = np.nan
 
         # t,bl,f
@@ -323,6 +375,8 @@ class DDEcal:
         coherency = np.array(coherency)
         if self.n_patches == 1:
             coherency.reshape(1, self.n_times, self.n_freqs, self.n_baselines)
+        if calculate_residual:
+            flagged_coherencies = coherency[:, :, self.flag_mask]
         coherency[:, :, self.flag_mask] = np.nan
 
         # select which rows of the visibility matrix will be active for each station (baseline mask)
@@ -331,11 +385,6 @@ class DDEcal:
             self.baseline_mask[i, :] = (self.baselines[:, 0] == station) | (
                 self.baselines[:, 1] == station
             )
-
-        # Set the number of spectral solutions
-        self.n_spectral_sols = self.n_freqs // self.n_freqs_per_sol
-        if self.n_spectral_sols * self.n_freqs_per_sol < self.n_freqs:
-            self.n_spectral_sols += 1  # last frequency slot has smaller set of data
 
         results = Parallel(n_jobs=-1)(
             delayed(self._DDEcal_timeslot)(
@@ -365,7 +414,7 @@ class DDEcal:
         }
 
         if fname is None:
-            fname = f"Calibration_results_{reweight_mode}_{int(self.smoothness_scale)}"
+            fname = f"Calibration_{reweight_mode}_{int(self.smoothness_scale)}"
 
         os.makedirs(f"{self.data_path}/calibration_results/", exist_ok=True)
         with open(f"{self.data_path}/calibration_results/{fname}", "wb") as fp:
@@ -373,4 +422,67 @@ class DDEcal:
         with open(f"{self.data_path}/calibration_results/{fname}_metadata", "wb") as fp:
             pickle.dump(metadata, fp)
 
+        if calculate_residual:
+            visibilities[:, self.flag_mask] = flagged_visibilities
+            coherency[:, :, self.flag_mask] = flagged_coherencies
+
+            print("calculating residual")
+            visibility_residuals = Parallel(n_jobs=-1)(
+                delayed(self._subtract_timeslot)(
+                    visibility=visibilities[t : t + self.n_times_per_sol, :, :],
+                    coherency=coherency[:, t : t + self.n_times_per_sol, :, :],
+                    gain=results[slot_number]["gains"],
+                )
+                for slot_number, t in enumerate(
+                    np.arange(0, self.n_times, self.n_times_per_sol)
+                )
+            )
+
+            visibility_residuals = np.concatenate(visibility_residuals, axis=0)
+            print(f"{self.data_path}/residuals/{fname}.csv")
+            self._write_visibility(
+                visibility_residuals, f"{self.data_path}/residuals/{fname}.csv"
+            )
+
         return results
+
+    def calculate_residuals(
+        self,
+        visibility_file,
+        gain_path,
+        skymodel,
+        fname,
+    ):
+        self.data_path = "/".join(visibility_file.split("/")[:-1])
+
+        visibilities = self._read_data(visibility_file, True)
+
+        patch_names = skymodel.elements.keys()
+        self.n_patches = len(patch_names)
+        coherency = []
+        for patch_name in patch_names:
+            patch_file = (
+                f"{self.data_path}/calibration_patches/patch_models/{patch_name}.csv"
+            )
+            patch_coherency = self._read_data(patch_file, False)
+            coherency.append(patch_coherency)
+        coherency = np.array(coherency)
+        if self.n_patches == 1:
+            coherency.reshape(1, self.n_times, self.n_freqs, self.n_baselines)
+
+        with open(gain_path, "rb") as fp:
+            gains = pickle.load(fp)
+
+        residuals = Parallel(n_jobs=-1)(
+            delayed(self._subtract_timeslot)(
+                visibility=visibilities[t : t + self.n_times_per_sol, :, :],
+                coherency=coherency[:, t : t + self.n_times_per_sol, :, :],
+                gain=gains[slot_number]["gains"],
+            )
+            for slot_number, t in enumerate(
+                np.arange(0, self.n_times, self.n_times_per_sol)
+            )
+        )
+
+        residuals = np.concatenate(residuals, axis=0)
+        self._write_visibility(residuals, fname)

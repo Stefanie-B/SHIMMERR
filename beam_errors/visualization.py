@@ -5,6 +5,7 @@ import pandas as pd
 from astropy.time import Time
 import os
 import pickle
+from scipy.stats import binned_statistic
 
 
 def get_beam(
@@ -537,6 +538,39 @@ def plot_gains(
     _make_gains_gif(f"{plot_folder}/{name}", metadata, "phase")
 
 
+def _load_gains(fname_gains):
+    with open(fname_gains, "rb") as fp:
+        full_results = pickle.load(fp)
+    gains = np.array(
+        [result["gains"] for result in full_results]
+    )  # time, freq_sols, stations, dirs
+    return gains
+
+
+def _parse_true_gains(gains, reference_station, metadata):
+    if reference_station is not None:
+        amplitudes = np.abs(gains)
+        phases = np.angle(gains)
+
+        reference_phases = np.squeeze(
+            phases[:, :, metadata["stations"] == reference_station, :]
+        )
+        phases -= reference_phases[:, :, np.newaxis, :]
+        true_gains = amplitudes * np.exp(1j * phases)
+    return true_gains
+
+
+def _parse_gain_error(true_gains, estimated_gains):
+    temporal_resolution_factor = true_gains.shape[0] // estimated_gains.shape[0]
+    spectral_resolution_factor = true_gains.shape[1] // estimated_gains.shape[1]
+
+    expanded_gains = estimated_gains.repeat(temporal_resolution_factor, axis=0).repeat(
+        spectral_resolution_factor, axis=1
+    )
+    plot_gains = expanded_gains / true_gains
+    return plot_gains
+
+
 def plot_gain_error(
     fname_gains,
     fname_true_gains,
@@ -546,37 +580,15 @@ def plot_gain_error(
     amplitude_lims=[0, 2],
     phase_lims=[-np.pi, np.pi],
 ):
-    with open(fname_gains, "rb") as fp:
-        full_results = pickle.load(fp)
-    estimated_gains = np.array(
-        [result["gains"] for result in full_results]
-    )  # time, freq_sols, stations, dirs
-
-    with open(fname_true_gains, "rb") as fp:
-        full_results = pickle.load(fp)
     with open(f"{fname_true_gains}_metadata", "rb") as fp:
         metadata = pickle.load(fp)
-    true_gains = np.array(
-        [result["gains"] for result in full_results]
-    )  # time, freq_sols, stations, dirs
 
-    if reference_station is not None:
-        amplitudes = np.abs(true_gains)
-        phases = np.angle(true_gains)
-
-        reference_phases = np.squeeze(
-            phases[:, :, metadata["stations"] == reference_station, :]
-        )
-        phases -= reference_phases[:, :, np.newaxis, :]
-        true_gains = amplitudes * np.exp(1j * phases)
-
-    temporal_resolution_factor = true_gains.shape[0] // estimated_gains.shape[0]
-    spectral_resolution_factor = true_gains.shape[1] // estimated_gains.shape[1]
-
-    expanded_gains = estimated_gains.repeat(temporal_resolution_factor, axis=0).repeat(
-        spectral_resolution_factor, axis=1
+    estimated_gains = _load_gains(fname_gains)
+    true_gains = _parse_true_gains(
+        _load_gains(fname_true_gains), reference_station, metadata
     )
-    plot_gains = expanded_gains / true_gains
+
+    plot_gains = _parse_gain_error(true_gains, estimated_gains)
 
     os.makedirs(f"{plot_folder}/{name}", exist_ok=True)
     for plot_number, direction in enumerate(metadata["directions"]):
@@ -606,3 +618,224 @@ def plot_gain_error(
         )
     _make_gains_gif(f"{plot_folder}/{name}", metadata, "amplitude")
     _make_gains_gif(f"{plot_folder}/{name}", metadata, "phase")
+
+
+def plot_gain_error_summary(
+    results,
+    fname_true_gains,
+    plot_folder,
+    savename,
+    reference_station="CS002HBA0",
+    amplitude_lims=[0, 2],
+    phase_lims=[-np.pi, np.pi],
+):
+    with open(f"{fname_true_gains}_metadata", "rb") as fp:
+        metadata = pickle.load(fp)
+
+    true_gains = _parse_true_gains(
+        _load_gains(fname_true_gains), reference_station, metadata
+    )
+
+    ncols = int(np.ceil(np.sqrt(len(metadata["stations"]))))
+    if ncols * (ncols - 1) < len(metadata["stations"]):
+        nrows = ncols
+    else:
+        nrows = ncols - 1
+
+    figures = []
+    for plot_number in range(2):
+        fig, ax = plt.subplots(
+            nrows=nrows, ncols=ncols, figsize=(15, 9), sharex=True, sharey=True, dpi=300
+        )
+        ax = np.reshape(ax, (-1))
+
+        # Cycle through stations
+        for station_number, station in enumerate(metadata["stations"]):
+            # Set correct labels, but hide the labels if they overlap with a different panel
+            ax[station_number].set_title(station, y=1, pad=-14)
+            ax[station_number].label_outer()
+
+            ax[station_number].set_xticks(
+                np.arange(
+                    len(results) // 2,
+                    (len(results) + 3) * len(metadata["directions"]),
+                    len(results) + 3,
+                )
+            )
+            ax[station_number].set_xticklabels(metadata["directions"], rotation=90)
+
+        figures.append([fig, ax])
+    for result_number, (result_label, result) in enumerate(results.items()):
+        estimated_gains = np.array([r["gains"] for r in result])
+        gain_errors = _parse_gain_error(true_gains, estimated_gains)
+
+        # amplitude_values = np.abs(gain_errors).mean(axis=(0, 1))
+        # phase_values = np.angle(gain_errors).mean(axis=(0, 1))
+        amplitude_values = np.abs(gain_errors).reshape(
+            (-1, len(metadata["stations"]), len(metadata["directions"]))
+        )
+        phase_values = np.angle(gain_errors).reshape(
+            (-1, len(metadata["stations"]), len(metadata["directions"]))
+        )
+
+        for plot_number, values in enumerate([amplitude_values, phase_values]):
+            fig, ax = figures[plot_number]
+
+            for station_number, station in enumerate(metadata["stations"]):
+                parts = ax[station_number].violinplot(
+                    values[:, station_number, :],
+                    showmedians=True,
+                    positions=np.arange(
+                        result_number,
+                        (len(results) + 3) * len(metadata["directions"]),
+                        len(results) + 3,
+                    ),
+                    widths=2,
+                )
+                for pc in parts["bodies"]:
+                    pc.set_facecolor(f"C{result_number}")
+                    pc.set_linewidth(0.5)
+                # ax[station_number].plot(
+                #     values[station_number, :],
+                #     color=f"C{result_number}",
+                #     marker="o",
+                #     linestyle="",
+                #     label=result_label,
+                # )
+
+    for plot_number, title in enumerate(["Amplitude error", "Phase error"]):
+        fig, ax = figures[plot_number]
+
+        # Align panels closely together
+        fig.subplots_adjust(wspace=0)
+        fig.subplots_adjust(hspace=0)
+
+        fig.suptitle(title)
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax[-1].legend(by_label.values(), by_label.keys())
+
+        if plot_number == 0:
+            ax[-1].set_ylim(amplitude_lims)
+        else:
+            ax[-1].set_ylim(phase_lims)
+
+        # Save
+        os.makedirs(f"{plot_folder}", exist_ok=True)
+        fig.savefig(f"{plot_folder}/{savename}_{title.replace(' ','_')}.png")
+        plt.close("all")
+
+
+import csv
+from astropy import constants as const
+
+
+def plot_residual_vs_baseline_length(
+    array,
+    visibility_files,
+    labels,
+    plot_folder,
+    savename="residual_visibilities",
+    reference_frequency=None,
+    time_slot=0,
+    xlims=[50, 5000],
+    ylims=[None, None],
+    lines=[250],
+    n_bins=50,
+    binning_edges=[20, 1e4],
+):
+    if reference_frequency is None:
+        with open(visibility_files[0]) as csv_file:
+            data = list(csv.DictReader(csv_file))
+        frequencies = np.unique([float(row["frequency"]) for row in data])
+        reference_frequency = frequencies[len(frequencies) // 2]
+    lambda_m = const.c.value / reference_frequency
+    plot_range = np.array(xlims) * lambda_m
+    lines = [lambda_m * line for line in lines]
+
+    station_list = list(array.keys())
+    baseline_dict = {}
+    for i, station1 in enumerate(station_list):
+        for j, station2 in enumerate(station_list[i:]):
+            baseline_length = np.linalg.norm(array[station1].p - array[station2].p)
+            if plot_range[0] <= baseline_length <= plot_range[1]:
+                baseline_dict[f"{station1}-{station2}"] = baseline_length
+
+    plt.figure(0, dpi=300, figsize=(8, 4))
+    plt.figure(1, dpi=300, figsize=(8, 4))
+
+    for file_number, visibility_file in enumerate(visibility_files):
+        with open(visibility_file) as csv_file:
+            data = list(csv.DictReader(csv_file))
+        baselines = np.unique(
+            [row["baseline"] for row in data if row["baseline"] in baseline_dict.keys()]
+        )
+        lengths = np.array([baseline_dict[baseline] for baseline in baselines])
+        bin_edges = np.logspace(
+            np.log10(binning_edges[0]), np.log10(binning_edges[1]), n_bins
+        )
+
+        for fig_number, average_mode in enumerate(["time", "frequency"]):
+            if average_mode == "frequency":
+                read_data = [
+                    np.abs(complex(row["visibility"]))
+                    for row in data
+                    if row["baseline"] in baseline_dict.keys()
+                    and row["time"] == data[time_slot]["time"]
+                ]
+            else:
+                read_data = [
+                    np.abs(complex(row["visibility"]))
+                    for row in data
+                    if row["baseline"] in baseline_dict.keys()
+                    and float(row["frequency"]) == reference_frequency
+                ]
+            read_data = np.array(read_data).reshape(-1, len(baseline_dict.keys()))
+            means = binned_statistic(lengths, read_data.mean(axis=0), bins=bin_edges)
+            # stddev = binned_statistic(
+            #     np.tile(lengths, (1, read_data.shape[0])).flatten(),
+            #     read_data.flatten(),
+            #     statistic="std",
+            #     bins=bin_edges,
+            # )
+
+            plt.figure(fig_number)
+            plt.step(
+                bin_edges[1:],
+                means[0],
+                where="post",
+                color=f"C{file_number}",
+                alpha=0.5,
+                label=labels[file_number],
+            )
+            # plt.errorbar(
+            #     x=np.sqrt(bin_edges[1:] * bin_edges[:-1]),
+            #     y=means[0],
+            #     yerr=stddev[0],
+            #     color=f"C{file_number}",
+            #     alpha=0.05,
+            #     fmt="none",
+            #     capsize=1,
+            # )
+
+    for fig_number, average_mode in enumerate(["time", "frequency"]):
+        fig = plt.figure(fig_number)
+        for line in lines:
+            plt.axvline(x=line, color="k", linestyle="--")
+
+        plt.semilogx()
+        plt.ylim(ylims)
+        plt.semilogy()
+
+        plt.xlabel("baseline length (m)")
+        plt.ylabel("residual (Jy)")
+
+        os.makedirs(f"{plot_folder}", exist_ok=True)
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+
+        plt.tight_layout()
+        fig.savefig(f"{plot_folder}/{savename}_average_in_{average_mode}.png")
+    plt.close("all")

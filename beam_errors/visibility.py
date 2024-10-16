@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from tqdm import tqdm, trange
+from tqdm import tqdm
 import os
 from astropy.time import Time, TimeDelta
 from astropy import constants as const
@@ -29,6 +29,7 @@ def calculate_directions(
     number_of_timeslots,
     right_ascensions,
     declinations,
+    n_jobs,
 ):
     """
     Helper function to generate source directions and tracking directions in an easy format
@@ -39,7 +40,7 @@ def calculate_directions(
         number_of_timesteps=number_of_timeslots,
         tracking_direction=True,
     )
-    directions = Parallel(n_jobs=-1)(
+    directions = Parallel(n_jobs=n_jobs)(
         delayed(station.radec_to_ENU)(
             right_ascension=right_ascension,
             declination=declination,
@@ -132,6 +133,7 @@ def predict_patch_visibilities(
     basestation=None,
     reuse_tile_beam=False,
     save_response=True,
+    n_jobs=-1,
 ):
     """
     Predicts noiseless visibilities of each patch and saves each patch to disk.
@@ -190,6 +192,7 @@ def predict_patch_visibilities(
             number_of_timeslots,
             right_ascensions,
             declinations,
+            n_jobs,
         )
         basestation_directions -= basestation_phase_center
 
@@ -203,6 +206,7 @@ def predict_patch_visibilities(
                 number_of_timeslots,
                 right_ascensions,
                 declinations,
+                n_jobs,
             )
 
             for frequency in frequencies:
@@ -284,7 +288,7 @@ def predict_patch_visibilities(
             for i in range(len(all_beams) // batch_size)
         ]
 
-        visibilities = Parallel(n_jobs=-1)(
+        visibilities = Parallel(n_jobs=n_jobs)(
             delayed(process_batch)(batch, source_powers) for batch in tqdm(batches)
         )
 
@@ -314,11 +318,11 @@ def predict_patch_visibilities(
         os.remove(f"{data_path}/{filename}/response.csv")
 
 
-def add_thermal_noise(filename, data_path, sefd):
+def add_thermal_noise(filename, data_path, sefd, seed):
     file_name_in = f"{data_path}/{filename}/full_model.csv"
     file_name_out = f"{data_path}/{filename}/data.csv"
     first_batch = True
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=seed)
     for batch in pd.read_csv(file_name_in, chunksize=int(1e5)):
         if first_batch:
             d_frequency = np.diff(np.unique(batch["frequency"]).astype(float))[0]
@@ -381,6 +385,8 @@ def predict_data(
     reuse_tile_beam=False,
     SEFD=4.2e3,
     save_response=True,
+    seed=None,
+    n_jobs=-1,
 ):
     predict_patch_visibilities(
         array=array,
@@ -395,12 +401,13 @@ def predict_data(
         basestation=basestation,
         reuse_tile_beam=reuse_tile_beam,
         save_response=save_response,
+        n_jobs=n_jobs,
     )
 
     sum_patches(filename, data_path, skymodel)
 
     if SEFD is not None:
-        add_thermal_noise(filename, data_path, SEFD)
+        add_thermal_noise(filename, data_path, SEFD, seed)
     else:
         shutil.copyfile(
             f"{data_path}/{filename}/full_model.csv", f"{data_path}/{filename}/data.csv"

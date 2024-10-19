@@ -6,6 +6,8 @@ from astropy.time import Time
 import os
 import pickle
 from scipy.stats import binned_statistic
+import csv
+from astropy import constants as const
 
 
 def get_beam(
@@ -399,6 +401,8 @@ def _plot_convergence_component(results, plot_folder, name, mode):
     os.makedirs(plot_folder, exist_ok=True)
     plt.xlabel("Iteration")
     plt.ylabel(mode + r"(Jy$^2$)")
+    if mode == "residuals":
+        plt.ylim(top=result[mode][0] * 2)
     plt.savefig(f"{plot_folder}/{mode}_{name}.png")
 
 
@@ -725,10 +729,6 @@ def plot_gain_error_summary(
         os.makedirs(f"{plot_folder}", exist_ok=True)
         fig.savefig(f"{plot_folder}/{savename}_{title.replace(' ','_')}.png")
         plt.close("all")
-
-
-import csv
-from astropy import constants as const
 
 
 def plot_residual_vs_baseline_length(

@@ -332,8 +332,12 @@ class DDEcal:
         reweight_mode=None,
         fname=None,
         calculate_residual=True,
+        data_path=None,
     ):
-        self.data_path = "/".join(visibility_file.split("/")[:-1])
+        if data_path is None:
+            self.data_path = "/".join(visibility_file.split("/")[:-1])
+        else:
+            self.data_path = data_path
 
         if reweight_mode == "abs":
             self._reweight_function = lambda coherency: np.nansum(
@@ -472,12 +476,19 @@ class DDEcal:
 
         with open(gain_path, "rb") as fp:
             gains = pickle.load(fp)
+        with open(f"{gain_path}_metadata", "rb") as fp:
+            metadata = pickle.load(fp)
+        subtract_indices = [
+            metadata["directions"].index(patch_name) for patch_name in patch_names
+        ]
 
         residuals = Parallel(n_jobs=-1)(
             delayed(self._subtract_timeslot)(
                 visibility=visibilities[t : t + self.n_times_per_sol, :, :],
                 coherency=coherency[:, t : t + self.n_times_per_sol, :, :],
-                gain=gains[slot_number]["gains"],
+                gain=gains[slot_number]["gains"].take(
+                    indices=subtract_indices, axis=-1
+                ),
             )
             for slot_number, t in enumerate(
                 np.arange(0, self.n_times, self.n_times_per_sol)

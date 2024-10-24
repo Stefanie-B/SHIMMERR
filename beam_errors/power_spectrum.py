@@ -18,8 +18,10 @@ class delay_spectrum:
 
             self.frequencies = np.unique([float(row["frequency"]) for row in data])
             self.n_freqs = len(self.frequencies)
-            self.delay = np.fft.fftfreq(
-                self.n_freqs, d=self.frequencies[1] - self.frequencies[0]
+            self.delay = np.fft.fftshift(
+                np.fft.fftfreq(
+                    self.n_freqs, d=self.frequencies[1] - self.frequencies[0]
+                )
             )
 
             self.times = np.unique([row["time"] for row in data])
@@ -99,12 +101,26 @@ class delay_spectrum:
         # mask out data outside bins
         valid_mask = (bin_indices >= 0) & (bin_indices < len(baseline_bins) - 1)
 
-        # bin the data
+        # bin the real data
         [
             np.add.at(binned_data[i], bin_indices[valid_mask], data[i][valid_mask])
             for i in range(self.n_freqs)
         ]
         weights = np.bincount(bin_indices[valid_mask], minlength=len(baseline_bins) - 1)
+
+        # Add the complex conjugates of the visibilities (count both baseline i,j and j,i)
+        valid_mask = valid_mask * (baseline_lengths > 0)  # excludes autocorrelations
+        [
+            np.add.at(
+                binned_data[i],
+                bin_indices[valid_mask],
+                np.conj(data[-i - 1][valid_mask]),
+            )
+            for i in range(self.n_freqs)
+        ]
+        weights += np.bincount(
+            bin_indices[valid_mask], minlength=len(baseline_bins) - 1
+        )
         return binned_data, weights
 
     def _write_PS(self, savename, baseline_bins, spectrum, weights):
@@ -139,7 +155,8 @@ class delay_spectrum:
 
     def _grid_file(self, file, baseline_bins):
         data = self._read_single_file(file)
-        ft_data = np.fft.fft(data, axis=1, norm="ortho")
+        ft_data = np.fft.fftshift(np.fft.fft(data, axis=1, norm="ortho"), axes=1)
+        ft_data = self._compute_auto_power(ft_data)
         new_bin, new_weights = self._assign_baseline_bin(ft_data, baseline_bins)
         return {"data": new_bin, "weights": new_weights}
 
@@ -161,12 +178,13 @@ class delay_spectrum:
     ):
         self._read_metadata(files[0])
         data, weights = self._grid_data(files, baseline_bins)
-        if cross_files is None:
-            spectrum = self._compute_auto_power(data)
-        else:
-            cross_data, cross_weights = self._grid_data(cross_files, baseline_bins)
-            spectrum = self._compute_cross_power(data, cross_data)
-            weights += cross_weights
+        spectrum = data
+        # if cross_files is None:
+        #     spectrum = self._compute_auto_power(data)
+        # else:
+        #     cross_data, cross_weights = self._grid_data(cross_files, baseline_bins)
+        #     spectrum = self._compute_cross_power(data, cross_data)
+        #     weights += cross_weights
 
         self._write_PS(savename, baseline_bins, spectrum, weights)
 

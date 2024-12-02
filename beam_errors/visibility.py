@@ -412,3 +412,24 @@ def predict_data(
         shutil.copyfile(
             f"{data_path}/{filename}/full_model.csv", f"{data_path}/{filename}/data.csv"
         )
+
+
+def subtract_visibilities(filename_in_1, filename_in_2, filename_out, common_path=""):
+    first_batch = True
+
+    iterator_file_1 = pd.read_csv(f"{common_path}/{filename_in_1}", chunksize=int(1e5))
+    iterator_file_2 = pd.read_csv(f"{common_path}/{filename_in_2}", chunksize=int(1e5))
+
+    for batch_file_1, batch_file_2 in zip(iterator_file_1, iterator_file_2):
+        output_patch = batch_file_1.copy()
+        output_patch["visibility"] = batch_file_1["visibility"].apply(
+            complex
+        ) - batch_file_2["visibility"].apply(complex)
+
+        output_patch.to_csv(
+            f"{common_path}/{filename_out}",
+            index=False,
+            header=first_batch,
+            mode="w" if first_batch else "a",
+        )
+        first_batch = False

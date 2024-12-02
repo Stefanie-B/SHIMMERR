@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
-from tqdm import tqdm, trange
+from tqdm import tqdm
 import os
 from astropy.time import Time, TimeDelta
 from astropy import constants as const
 from beam_errors.array import calculate_array_factor_contribution
 from joblib import Parallel, delayed
+import shutil
 
 
 def get_time_labels(start_time_utc, duration, time_resolution):
@@ -28,6 +29,7 @@ def calculate_directions(
     number_of_timeslots,
     right_ascensions,
     declinations,
+    n_jobs,
 ):
     """
     Helper function to generate source directions and tracking directions in an easy format
@@ -38,7 +40,7 @@ def calculate_directions(
         number_of_timesteps=number_of_timeslots,
         tracking_direction=True,
     )
-    directions = Parallel(n_jobs=-1)(
+    directions = Parallel(n_jobs=n_jobs)(
         delayed(station.radec_to_ENU)(
             right_ascension=right_ascension,
             declination=declination,
@@ -57,7 +59,7 @@ def record_beams(
     df, new_batch, first_frequency, last_frequency, first_station, file_path
 ):
     """
-    Helper function to write the temporary beam files
+    Helper function to write the response beam files
     """
     # Initialize the station with the first frequency, otherwise append new data
     if first_frequency:
@@ -65,13 +67,13 @@ def record_beams(
     else:
         df = pd.concat([df, new_batch])
 
-    # When all frequencies are done, write the temporary file
+    # When all frequencies are done, write the response file
     if last_frequency:
         if first_station:
-            df.to_csv(f"{file_path}/temp.csv", index=False)
+            df.to_csv(f"{file_path}/response.csv", index=False)
         else:
             df.to_csv(
-                f"{file_path}/temp.csv",
+                f"{file_path}/response.csv",
                 index=False,
                 header=False,
                 mode="a",
@@ -100,15 +102,18 @@ def process_batch(batch, source_powers):
     ] * baseline_frame.apply(
         lambda row: source_powers[(row["source"], row["frequency"])], axis=1
     )
+    baseline_frame["baseline"] = (
+        baseline_frame["station 1"].astype(str)
+        + "-"
+        + baseline_frame["station 2"].astype(str)
+    )
 
     # Sum all sources in the patch to get the visibility
     visibility_frame = baseline_frame[
-        ["time", "station 1", "station 2", "frequency", "source", "visibility"]
+        ["time", "baseline", "frequency", "source", "visibility"]
     ]
     visibility = (
-        visibility_frame.groupby(
-            ["time", "station 1", "station 2", "frequency"], observed=True
-        )
+        visibility_frame.groupby(["time", "frequency", "baseline"], observed=True)
         .agg({"visibility": "sum"})
         .reset_index()
     )
@@ -127,6 +132,8 @@ def predict_patch_visibilities(
     antenna_mode="omnidirectional",
     basestation=None,
     reuse_tile_beam=False,
+    save_response=True,
+    n_jobs=-1,
 ):
     """
     Predicts noiseless visibilities of each patch and saves each patch to disk.
@@ -155,8 +162,12 @@ def predict_patch_visibilities(
         name of the station used as the 'array center', by default None (selects the first station in the array dictionary)
     prediction_batch_size : int, optional
         approximate batch size for each visibility prediction after beam calculation. This is a trade off between speed and memory virtualization. The batch will become an integer multiple of the number of stations * number of sources, so this number may be exceeded if one of such batches is larger than the specified value, by default 10000.
+    save_response : bool, optional
+        toggles whether the station responses are saved to enable computing the expected gain. Default is True.
     """
     os.makedirs(f"{data_path}/{filename}/patch_models", exist_ok=True)
+    if save_response:
+        os.makedirs(f"{data_path}/{filename}/patch_responses", exist_ok=True)
 
     # Create time labels to write for the data later
     time_labels = get_time_labels(start_time_utc, duration, time_resolution)
@@ -181,6 +192,7 @@ def predict_patch_visibilities(
             number_of_timeslots,
             right_ascensions,
             declinations,
+            n_jobs,
         )
         basestation_directions -= basestation_phase_center
 
@@ -194,6 +206,7 @@ def predict_patch_visibilities(
                 number_of_timeslots,
                 right_ascensions,
                 declinations,
+                n_jobs,
             )
 
             for frequency in frequencies:
@@ -211,7 +224,7 @@ def predict_patch_visibilities(
                 delay = np.squeeze(
                     calculate_array_factor_contribution(
                         station.p_array.reshape(1, 3),
-                        np.array([station.g]),
+                        np.array([1 + 0j]),
                         k,
                         basestation_directions,
                     )
@@ -253,7 +266,7 @@ def predict_patch_visibilities(
         print("Calculating visibilities...")
 
         # Load all beams and group them such that we can split in time and frequency
-        all_beams = pd.read_csv(f"{data_path}/{filename}/temp.csv")
+        all_beams = pd.read_csv(f"{data_path}/{filename}/response.csv")
         all_beams["value"] = all_beams["value"].astype(complex)
         for column in ["time", "frequency", "station", "source"]:
             all_beams[column] = all_beams[column].astype(
@@ -275,7 +288,7 @@ def predict_patch_visibilities(
             for i in range(len(all_beams) // batch_size)
         ]
 
-        visibilities = Parallel(n_jobs=-1)(
+        visibilities = Parallel(n_jobs=n_jobs)(
             delayed(process_batch)(batch, source_powers) for batch in tqdm(batches)
         )
 
@@ -286,15 +299,30 @@ def predict_patch_visibilities(
                 header=(i == 0),
                 mode="w" if i == 0 else "a",
             )
+        if save_response:
+            all_beams.loc[:, "value"] = all_beams["value"] * all_beams.apply(
+                lambda row: source_powers[(row["source"], row["frequency"])], axis=1
+            )
+            response = (
+                all_beams.groupby(["time", "frequency", "station"], observed=True)
+                .agg({"value": "sum"})
+                .reset_index()
+            )
+            response.to_csv(
+                f"{data_path}/{filename}/patch_responses/{patch_name}.csv",
+                index=False,
+                header=True,
+                mode="w",
+            )
 
-        os.remove(f"{data_path}/{filename}/temp.csv")
+        os.remove(f"{data_path}/{filename}/response.csv")
 
 
-def add_thermal_noise(filename, data_path, sefd):
+def add_thermal_noise(filename, data_path, sefd, seed):
     file_name_in = f"{data_path}/{filename}/full_model.csv"
     file_name_out = f"{data_path}/{filename}/data.csv"
     first_batch = True
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=seed)
     for batch in pd.read_csv(file_name_in, chunksize=int(1e5)):
         if first_batch:
             d_frequency = np.diff(np.unique(batch["frequency"]).astype(float))[0]
@@ -319,7 +347,6 @@ def add_thermal_noise(filename, data_path, sefd):
 
 
 def sum_patches(filename, data_path, skymodel):
-
     model_directory = f"{data_path}/{filename}/patch_models/"
     file_name_out = f"{data_path}/{filename}/full_model.csv"
 
@@ -331,9 +358,10 @@ def sum_patches(filename, data_path, skymodel):
 
     full_model = (
         pd.concat(patch_dataframes)
-        .groupby(["time", "station 1", "station 2", "frequency"], observed=True)
+        .groupby(["time", "frequency", "baseline"], observed=True)
         .agg({"visibility": "sum"})
-    ).reset_index()
+        .reset_index()
+    )
 
     full_model.to_csv(
         file_name_out,
@@ -356,6 +384,9 @@ def predict_data(
     basestation=None,
     reuse_tile_beam=False,
     SEFD=4.2e3,
+    save_response=True,
+    seed=None,
+    n_jobs=-1,
 ):
     predict_patch_visibilities(
         array=array,
@@ -369,8 +400,15 @@ def predict_data(
         antenna_mode=antenna_mode,
         basestation=basestation,
         reuse_tile_beam=reuse_tile_beam,
+        save_response=save_response,
+        n_jobs=n_jobs,
     )
 
     sum_patches(filename, data_path, skymodel)
 
-    add_thermal_noise(filename, data_path, SEFD)
+    if SEFD is not None:
+        add_thermal_noise(filename, data_path, SEFD, seed)
+    else:
+        shutil.copyfile(
+            f"{data_path}/{filename}/full_model.csv", f"{data_path}/{filename}/data.csv"
+        )

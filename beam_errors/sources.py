@@ -98,7 +98,6 @@ class Patch:
 
 class Skymodel:
     def __init__(self, filename):
-
         self.elements = {}
         with open(filename, "r") as f:
             self.parse_formatstring(f.readline())
@@ -136,7 +135,7 @@ class Skymodel:
                     try:
                         reference_frequency = float(get_item("referencefrequency"))
                     except ValueError:
-                        reference_frequency = get_item("default_referencefrequency")
+                        reference_frequency = self.items["default_referencefrequency"]
 
                     # Fill in whether the spectral index is logarithmic
                     try:
@@ -200,3 +199,27 @@ class Skymodel:
                 self.items["default_referencefrequency"] = float(
                     default_reference_frequency
                 )
+
+    def join_patches(self, patch_names, joint_name=None, joint_ra=None, joint_dec=None):
+        # Make sure metadata of the new patch is provided
+        if joint_name is None:  # If no name, just join the patch names
+            joint_name = "_".join(patch_names)
+        if (
+            joint_ra is None
+        ):  # If no ra or dec, just take the metadata of the first patch
+            joint_ra = self.elements[patch_names[0]].ra
+        if joint_dec is None:
+            joint_dec = self.elements[patch_names[0]].dec
+
+        # Create the new joint patch (still devoid of sources)
+        self.elements[joint_name] = Patch(
+            patch_right_ascension=joint_ra,
+            patch_declination=joint_dec,
+        )
+
+        for patch in patch_names:
+            # Add the sources from each patch
+            self.elements[joint_name].elements.update(self.elements[patch].elements)
+
+            # Then delete the old patch
+            del self.elements[patch]

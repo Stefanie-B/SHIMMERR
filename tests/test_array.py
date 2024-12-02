@@ -343,3 +343,40 @@ def test_ENU_rotation(station_args, rotation_args, expected):
     rotation_matrix = test_station.ENU_rotation_matrix()
 
     npt.assert_array_almost_equal(rotation_matrix @ rotation_args, expected, 2)
+
+
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        ([0, 0, None], True),
+        ([0, 321, 123], True),
+        ([12, 0, None], True),
+        ([1, 2, 5], True),
+        ([1, 2, None], False),
+    ],
+)
+def test_add_random_gain_drift(args, expected):
+    from beam_errors.array import Station
+
+    # Create array
+    positions = [[[i, j, 0] for i in range(100)] for j in range(1000)]
+    station = Station(positions)
+
+    station.add_random_gain_drift(*args)
+
+    tile_gains_std = np.std(station.get_element_property("g"))
+    npt.assert_almost_equal(tile_gains_std, args[0], 0)
+
+    antenna_gains = np.array(
+        [tile.get_element_property("g") for tile in station.elements]
+    )
+    antenna_gains_std = np.std(antenna_gains)
+    npt.assert_almost_equal(antenna_gains_std, args[1], 0)
+
+    station.reset_elements()
+    station.add_random_gain_drift(*args)
+    new_antenna_gains = np.array(
+        [tile.get_element_property("g") for tile in station.elements]
+    )
+    is_same = (antenna_gains == new_antenna_gains).all()
+    npt.assert_equal(is_same, expected)

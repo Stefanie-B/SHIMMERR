@@ -488,7 +488,9 @@ class Station:
             )  # N(0, 1)
             number_of_broken_elements = np.rint(
                 normal_distribution * np.sqrt(number) + number
-            ).astype(int)  # N(number, number)
+            ).astype(
+                int
+            )  # N(number, number)
         elif mode == "typical_percentage":
             # Note that this may trigger warnings as the drawn random number can be outside the number of elements in a tile
             normal_distribution = rng.standard_normal(

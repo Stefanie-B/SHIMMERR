@@ -1,4 +1,4 @@
-from SHIMMERR.array import Station
+from shimmerr.array import Station
 import numpy as np
 
 # For LOFAR specific
@@ -96,7 +96,7 @@ def load_LOFAR(mode="EoR", pointing_ra=None, pointing_dec=None):
     Parameters
     ----------
     mode : str, optional
-        Beamforming mode, can be "CS" (only core stations), "Dutch tapered" (all Dutch stations, with the RS beamformed to act like a CS), "Dutch sensitive" (all Dutch stations, with all tiles in the RS functioning), "international" (all LOFAR stations from Lofarantpos), or "EoR" (stations with baselines shorter than ~10 km, in tapered setting, corresponds to the Epoch of Reionization science case), by default "EoR"
+        Beamforming mode, can be "CS" (only core stations), "Dutch_tapered" (all Dutch stations, with the RS beamformed to act like a CS), "Dutch_sensitive" (all Dutch stations, with all tiles in the RS functioning), "international" (all LOFAR stations from Lofarantpos), or "EoR" (stations with baselines shorter than ~10 km, in tapered setting, corresponds to the Epoch of Reionization science case), by default "EoR"
     pointing_ra : float, optional
         Right ascension of the phase center in deg, by default None (drift-scan)
     pointing_dec : float, optional

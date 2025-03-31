@@ -12,7 +12,7 @@ import pytest
     ],
 )
 def test_parse_right_ascension(args, expected):
-    from SHIMMERR.sources import Source
+    from shimmerr.sources import Source
 
     npt.assert_almost_equal(Source.parse_right_ascension(args), expected)
 
@@ -27,7 +27,7 @@ def test_parse_right_ascension(args, expected):
     ],
 )
 def test_parse_declination(args, expected):
-    from SHIMMERR.sources import Source
+    from shimmerr.sources import Source
 
     npt.assert_almost_equal(Source.parse_declination(args), expected)
 
@@ -43,7 +43,7 @@ def test_parse_declination(args, expected):
     ],
 )
 def test_logarithmic_spectral_index_brightness(args, expected):
-    from SHIMMERR.sources import Source
+    from shimmerr.sources import Source
 
     npt.assert_almost_equal(
         Source.logarithmic_spectral_index_brightness(*args), expected
@@ -61,7 +61,7 @@ def test_logarithmic_spectral_index_brightness(args, expected):
     ],
 )
 def test_linear_spectral_index_brightness(args, expected):
-    from SHIMMERR.sources import Source
+    from shimmerr.sources import Source
 
     npt.assert_almost_equal(Source.linear_spectral_index_brightness(*args), expected)
 
@@ -106,7 +106,7 @@ def test_linear_spectral_index_brightness(args, expected):
     ],
 )
 def test_Source_initialization(args_init, test_frequency, expected):
-    from SHIMMERR.sources import Source
+    from shimmerr.sources import Source
 
     test_source = Source(*args_init)
     npt.assert_almost_equal(test_source.ra, expected[0])
@@ -119,7 +119,7 @@ def test_Source_initialization(args_init, test_frequency, expected):
     [(["19:59:26", "+58.48.42.4"], [299.858333333, 58.8117777778, {}])],
 )
 def test_Patch_initialization(args, expected):
-    from SHIMMERR.sources import Patch
+    from shimmerr.sources import Patch
 
     test_patch = Patch(*args)
 
@@ -140,7 +140,7 @@ def test_Patch_initialization(args, expected):
     ],
 )
 def test_add_source(args_patch, args_source1, args_source2, expected):
-    from SHIMMERR.sources import Patch
+    from shimmerr.sources import Patch
 
     test_patch = Patch(*args_patch)
     test_patch.add_source(*args_source1)
@@ -210,7 +210,7 @@ def test_add_source(args_patch, args_source1, args_source2, expected):
     ],
 )
 def test_Skymodel_init(args, expected, expected_raises):
-    from SHIMMERR.sources import Skymodel
+    from shimmerr.sources import Skymodel
 
     if expected_raises is not None:
         with pytest.raises(expected_raises):

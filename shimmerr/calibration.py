@@ -1,5 +1,5 @@
 import copy
-from SHIMMERR.visibility import predict_patch_visibilities
+from shimmerr.visibility import predict_patch_visibilities
 import csv
 import numpy as np
 from astropy import constants as const
@@ -85,8 +85,8 @@ class DDEcal:
 
         dt = t2 - t1
         time_band = (
-            (t_end - t1) + dt
-        )  # one extra, to account for the half timestep a before t1 and after t_end
+            t_end - t1
+        ) + dt  # one extra, to account for the half timestep a before t1 and after t_end
 
         self.time_resolution = dt.sec
         self.duration = time_band.sec / 3600

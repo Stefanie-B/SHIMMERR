@@ -4,7 +4,7 @@ from tqdm import tqdm
 import os
 from astropy.time import Time, TimeDelta
 from astropy import constants as const
-from SHIMMERR.array import calculate_array_factor_contribution
+from shimmerr.array import calculate_array_factor_contribution
 from joblib import Parallel, delayed
 import shutil
 
@@ -299,7 +299,9 @@ def predict_patch_visibilities(
                 header=(i == 0),
                 mode="w" if i == 0 else "a",
             )
-        if save_response:  # Allows for saving the beam response (the signal that is received by a single station rather than a baseline)
+        if (
+            save_response
+        ):  # Allows for saving the beam response (the signal that is received by a single station rather than a baseline)
             all_beams.loc[:, "value"] = all_beams["value"] * all_beams.apply(
                 lambda row: source_powers[(row["source"], row["frequency"])], axis=1
             )

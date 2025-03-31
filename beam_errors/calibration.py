@@ -93,12 +93,37 @@ class DDEcal:
 
     def _set_baseline_length(self):
         """
-        Calculates the lengths of all baselines based on the station positions
+        Calculates the lengths of all baselines based on the station positions in the reference stations ENU frame
         """
-        p1 = np.array([self.array[station].p for station in self.baselines[:, 0]])
-        p2 = np.array([self.array[station].p for station in self.baselines[:, 1]])
-        distance = np.linalg.norm(p1 - p2, axis=1)
-        self.baseline_length = distance
+        [
+            station.set_array_position(self.array[self.reference_station])
+            for station in self.array.values()
+        ]
+        p1 = np.array([self.array[station].p_array for station in self.baselines[:, 0]])
+        p2 = np.array([self.array[station].p_array for station in self.baselines[:, 1]])
+        baseline = p1 - p2
+
+        # Calculate the phase center direction in the reference station's ENU system
+        phase_center = (
+            self.array[self.reference_station]
+            .radec_to_ENU(
+                time=self.times[0],
+                temporal_offset=self.time_resolution,
+                number_of_timesteps=self.n_times,
+                tracking_direction=True,
+            )
+            .T
+        )
+
+        # Calculate the projected baseline lengths
+        parallel_component = np.dot(phase_center, baseline.T)
+        parallel_component_vector = (
+            parallel_component[:, :, np.newaxis] * phase_center[:, np.newaxis, :]
+        )
+        perpendicular_component = baseline[np.newaxis, ...] - parallel_component_vector
+        projected_baseline = np.linalg.norm(perpendicular_component, axis=-1)
+
+        self.baseline_length = projected_baseline
 
     def _read_data(self, visibility_file, update_metadata=True):
         """
@@ -155,8 +180,12 @@ class DDEcal:
         min_l = const.c.value / self.frequencies * self.uv_lambda[0]
         max_l = const.c.value / self.frequencies * self.uv_lambda[1]
 
-        too_short = self.baseline_length[np.newaxis, :] < min_l[:, np.newaxis]
-        too_long = self.baseline_length[np.newaxis, :] > max_l[:, np.newaxis]
+        too_short = (
+            self.baseline_length[:, np.newaxis, :] < min_l[np.newaxis, :, np.newaxis]
+        )
+        too_long = (
+            self.baseline_length[:, np.newaxis, :] > max_l[np.newaxis, :, np.newaxis]
+        )
         self.flag_mask = too_short | too_long
 
     def _predict_model(self, skymodel):
@@ -275,7 +304,7 @@ class DDEcal:
             # use the weights
             if np.sum(convolved_weights == 0) > 0:
                 print(
-                    f"There are now {np.sum(convolved_weights==0)} ill-defined weights, replacing the gains with zeros"
+                    f"There are now {np.sum(convolved_weights == 0)} ill-defined weights, replacing the gains with zeros"
                 )
                 convolved_gains[np.where(convolved_weights == 0)] = 0
                 convolved_weights[np.where(convolved_weights == 0)] = 1
@@ -572,8 +601,8 @@ class DDEcal:
         # Preflag on baseline length
         self._run_preflagger()
         if calculate_residual:
-            flagged_visibilities = visibilities[:, self.flag_mask]
-        visibilities[:, self.flag_mask] = np.nan
+            flagged_visibilities = visibilities[self.flag_mask]
+        visibilities[self.flag_mask] = np.nan
 
         # Obtain the model
         if not reuse_predict:
@@ -590,9 +619,9 @@ class DDEcal:
         coherency = np.array(coherency)
         if self.n_patches == 1:
             coherency.reshape(1, self.n_times, self.n_freqs, self.n_baselines)
-        if calculate_residual:  # Flag
-            flagged_coherencies = coherency[:, :, self.flag_mask]
-        coherency[:, :, self.flag_mask] = np.nan
+        if calculate_residual:
+            flagged_coherencies = coherency[:, self.flag_mask]
+        coherency[:, self.flag_mask] = np.nan
 
         # select which rows of the visibility matrix will be active for each station (baseline mask)
         self.baseline_mask = np.ones([self.n_stations, self.n_baselines]).astype(bool)
@@ -641,8 +670,8 @@ class DDEcal:
 
         # Calculate residual visibilties
         if calculate_residual:
-            visibilities[:, self.flag_mask] = flagged_visibilities
-            coherency[:, :, self.flag_mask] = flagged_coherencies
+            visibilities[self.flag_mask] = flagged_visibilities
+            coherency[:, self.flag_mask] = flagged_coherencies
 
             print("calculating residual")
             visibility_residuals = Parallel(n_jobs=-1)(

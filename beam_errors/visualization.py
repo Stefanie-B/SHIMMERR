@@ -197,8 +197,17 @@ def plot_spatial_beam(
     vmin = kwargs.pop("vmin", -50)
     vmax = kwargs.pop("vmax", 0)
     cmap = kwargs.pop("cmap", "plasma")
+    ax = kwargs.pop("ax", None)
+    fig = kwargs.pop("fig", None)
 
-    fig, ax = plt.subplots(ncols=1, nrows=1, subplot_kw={"projection": "polar"})
+    if ax is None:
+        # If no axes provided, create one
+        fig, ax = plt.subplots(ncols=1, nrows=1, subplot_kw={"projection": "polar"})
+    else:
+        # Ensure the axes is in polar projection
+        if ax.name != "polar":
+            raise ValueError("axes object must be in polar projection")
+
     beam = beam.reshape(AZ.shape)
     im = ax.pcolormesh(
         AZ + np.pi / 2,  # this brings the North up rather than right
@@ -219,7 +228,7 @@ def plot_spatial_beam(
             az
         ):  # Happens in zenith, when East and North are both 0, so we set an arbitrary azimuth
             az = 0
-        ax.scatter(az + np.pi / 2, np.sin(inc), color="k", s=100, fc="none")
+        ax.scatter(az + np.pi / 2, np.sin(inc), color="r", s=100, fc="none")
 
     if plot_title is not None:
         ax.set_title(plot_title)
@@ -323,7 +332,13 @@ def plot_spectrotemporal_beam(
     vmax = kwargs.pop("vmax", 0)
     cmap = kwargs.pop("cmap", "plasma")
 
-    fig, ax = plt.subplots(ncols=1, nrows=1)
+    ax = kwargs.pop("ax", None)
+    fig = kwargs.pop("fig", None)
+
+    if ax is None:
+        # If no axes provided, create one
+        fig, ax = plt.subplots(ncols=1, nrows=1)
+
     im = ax.pcolormesh(
         T,
         F,

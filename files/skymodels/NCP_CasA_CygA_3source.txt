@@ -1,0 +1,9 @@
+FORMAT = Name, Patch, Ra, Dec, I, SpectralIndex='[]', LogarithmicSI, ReferenceFrequency='150000000.0'
+# This model is not a physically accurate model at all, and is to be used only to get a feeling for orders of magnitude
+
+ , NCP, 0:00:00.0, 90.00.00.00,,,,
+, CygA, 19:59:26, +40.44.00,,,,
+, CasA, 23:23:28, +58.48.42,,,,
+sNCP, NCP, 0:00:00.00, 90.00.00.00,342.9, [0.0], false,141600038.567377
+sCygA, CygA, 19:59:26, +40.44.00,15842.0, [-0.8], false,7.38000e+07
+sCasA, CasA,23:23:28, +58.48.42,20944.4, [-0.8], false,7.37817e+07

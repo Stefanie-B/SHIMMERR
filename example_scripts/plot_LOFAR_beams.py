@@ -1,10 +1,6 @@
 # %%
-import os
-
-os.chdir("..")
-
-from beam_errors.visualization import plot_spatial_beam, plot_spectrotemporal_beam
-from beam_errors.load_array import load_LOFAR, load_array_from_file
+from shimmerr.visualization import plot_spatial_beam, plot_spectrotemporal_beam
+from shimmerr.load_array import load_LOFAR, load_array_from_file
 import numpy as np
 
 array = load_LOFAR(mode="EoR")

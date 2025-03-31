@@ -169,7 +169,7 @@ results = calibrator.run_DDEcal(
 The user can then use the `plot_gains` or `plot_convergence` routines fom `shimmerr.visualization` to inspect the results. Also, `shimmerr.metrics/compute_realized_gains` can be used to find the ideal gain, which can be compared to the estimated gain with `shimmerr.visualization.plot_gain_errors`.
 
 # Documentation
-The full Sphinx docs can be found [here](https://stefanie-b.github.io/SHIMMERR/).
+The full Sphinx docs can be found [here](https://stefanie-b.github.io/shimmerr/).
 
 
 # Installation

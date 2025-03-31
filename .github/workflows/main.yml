@@ -37,5 +37,5 @@ jobs:
     - name: Test with PyTest
       run: |
         python3 -m pytest --cov=shimmerr.array tests/test_array.py
-	python3 -m pytest --cov=shimmerr.load_array tests/test_load_array.py
-	python3 -m pytest --cov=shimmerr.sources tests/test_sources.py
+        python3 -m pytest --cov=shimmerr.load_array tests/test_load_array.py
+        python3 -m pytest --cov=shimmerr.sources tests/test_sources.py

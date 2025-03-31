@@ -154,7 +154,10 @@ def _expand_in_time(output_file, times):
         tab.taql("UPDATE $out_ms SET TIME=$time, TIME_CENTROID=$time OFFSET $offset")
     out_ms.close()
     template.close()
-    shutil.rmtree(f"{output_file}_temp")
+    if os.path.islink(f"{output_file}_temp"):
+        os.unlink(f"{output_file}_temp")
+    elif os.path.isdir(f"{output_file}_temp"):
+        shutil.rmtree(f"{output_file}_temp")
 
 
 def _adjust_pointing(array, output_file):
@@ -242,7 +245,7 @@ def _export_uvw_coordinates(output_file, array, times, baselines, ms_order):
 
         uvw[baseline_number::n_baselines, 0] = -np.dot(baseline_vector, u_unit)
         uvw[baseline_number::n_baselines, 1] = -np.dot(baseline_vector, v_unit)
-        uvw[baseline_number::n_baselines, 2] = -np.dot(baseline_vector, w_unit)
+        uvw[baseline_number::n_baselines, 2] = np.dot(baseline_vector, w_unit)
 
     # Place the column
     out_ms = tab.table(output_file, readonly=False, ack=False)

@@ -5,9 +5,6 @@ import pandas as pd
 from astropy.time import Time
 import os
 import pickle
-from scipy.stats import binned_statistic
-import csv
-from astropy import constants as const
 
 
 def get_beam(

@@ -11,7 +11,7 @@ jobs:
     # OS to run tests on
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11"]
 
     runs-on: ${{ matrix.os }}

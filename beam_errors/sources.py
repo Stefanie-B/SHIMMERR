@@ -122,7 +122,7 @@ class Skymodel:
                     # Check if this is actually a patch definition or a sneaky source
                     if get_item("i") != "":
                         raise ValueError(
-                            f"Patch {patch_name} has not been defined before adding sources."
+                            f"Patch {patch_name} has not been defined before adding sources (or you have specified a brightness for this patch)."
                         )
                     # Add a new patch
                     self.elements[patch_name] = Patch(
@@ -188,17 +188,21 @@ class Skymodel:
 
             # There is a default value for the reference frequency that we also need to save
             if itemname == "referencefrequency":
-                _, default_reference_frequency = matching_string.split("=")
-                default_reference_frequency = "".join(
-                    i
-                    for i in default_reference_frequency
-                    if i.isdigit()
-                    or i == "e"
-                    or i == "-"  # e and - are needed for numbers like 5e-1
-                )
-                self.items["default_referencefrequency"] = float(
-                    default_reference_frequency
-                )
+                try:
+                    _, default_reference_frequency = matching_string.split("=")
+                    default_reference_frequency = "".join(
+                        i
+                        for i in default_reference_frequency
+                        if i.isdigit()
+                        or i == "e"
+                        or i == "-"  # e and - are needed for numbers like 5e-1
+                    )
+                    self.items["default_referencefrequency"] = float(
+                        default_reference_frequency
+                    )
+                except ValueError:
+                    print("No default reference frequency provided in skymodel.")
+                    continue
 
     def join_patches(self, patch_names, joint_name=None, joint_ra=None, joint_dec=None):
         # Make sure metadata of the new patch is provided

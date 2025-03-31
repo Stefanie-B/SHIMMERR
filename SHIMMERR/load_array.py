@@ -1,4 +1,4 @@
-from beam_errors.array import Station
+from SHIMMERR.array import Station
 import numpy as np
 
 # For LOFAR specific
@@ -208,7 +208,6 @@ def load_LOFAR(mode="EoR", pointing_ra=None, pointing_dec=None):
 
     array = {}
     for station_name in station_names:
-
         dipole_elements_pqr = db.hba_dipole_pqr(station_name)
 
         # Taper the RS by removing unused elements. We taper the tiles, so we have to divide the dipole number by 16 to get the tile number

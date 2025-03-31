@@ -18,7 +18,7 @@ import pytest
     ],
 )
 def test_Antenna_init(args, expected, expected_raises):
-    from beam_errors.array import Antenna
+    from SHIMMERR.array import Antenna
 
     if expected_raises is not None:
         with pytest.raises(expected_raises):
@@ -44,7 +44,7 @@ def test_Antenna_init(args, expected, expected_raises):
     ],
 )
 def test_Antenna_response(args_init, args_response, expected):
-    from beam_errors.array import Antenna
+    from SHIMMERR.array import Antenna
 
     test_antenna = Antenna(*args_init)
     npt.assert_almost_equal(test_antenna.calculate_response(*args_response), expected)
@@ -81,7 +81,7 @@ def test_Antenna_response(args_init, args_response, expected):
     ],
 )
 def test_Tile_init(args, expected, expected_raises):
-    from beam_errors.array import Tile
+    from SHIMMERR.array import Tile
 
     if expected_raises is not None:
         with pytest.raises(expected_raises):
@@ -134,7 +134,7 @@ def test_Tile_init(args, expected, expected_raises):
     ],
 )
 def test_Tile_response(args_init, args_response, expected):
-    from beam_errors.array import Tile
+    from SHIMMERR.array import Tile
 
     test_tile = Tile(*args_init)
     test_tile.set_ENU_positions(
@@ -199,7 +199,7 @@ def test_Tile_response(args_init, args_response, expected):
     ],
 )
 def test_Station_init(args, expected, expected_raises):
-    from beam_errors.array import Station
+    from SHIMMERR.array import Station
 
     if expected_raises is not None:
         with pytest.raises(expected_raises):
@@ -261,7 +261,7 @@ def test_Station_init(args, expected, expected_raises):
     ],
 )
 def test_Station_response(args_init, args_response, expected):
-    from beam_errors.array import Station
+    from SHIMMERR.array import Station
 
     test_station = Station(*args_init)
     npt.assert_almost_equal(
@@ -310,7 +310,7 @@ def test_Station_response(args_init, args_response, expected):
     ],
 )
 def test_radec_to_ENU(args_init, args_location, expected):
-    from beam_errors.array import Station
+    from SHIMMERR.array import Station
 
     test_station = Station(*args_init)
     npt.assert_array_almost_equal(
@@ -337,7 +337,7 @@ def test_radec_to_ENU(args_init, args_location, expected):
     ],
 )
 def test_ENU_rotation(station_args, rotation_args, expected):
-    from beam_errors.array import Station
+    from SHIMMERR.array import Station
 
     test_station = Station(*station_args)
     rotation_matrix = test_station.ENU_rotation_matrix()
@@ -356,7 +356,7 @@ def test_ENU_rotation(station_args, rotation_args, expected):
     ],
 )
 def test_add_random_gain_drift(args, expected):
-    from beam_errors.array import Station
+    from SHIMMERR.array import Station
 
     # Create array
     positions = [[[i, j, 0] for i in range(100)] for j in range(1000)]

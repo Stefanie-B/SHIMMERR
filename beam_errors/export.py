@@ -8,6 +8,9 @@ import csv
 
 
 def _create_output_file(array, template_name, output_file, DP3_binding):
+    """
+    Creates an empty MS to store the visibilities in
+    """
     # Copy the template to a temporary file that can be edited and remove unused stations
     shutil.rmtree(output_file, ignore_errors=True)
     template = tab.table(template_name, readonly=True, memorytable=True, ack=False)
@@ -34,6 +37,9 @@ def _create_output_file(array, template_name, output_file, DP3_binding):
 
 
 def _unflag_broken_tiles(array, output_file):
+    """
+    Resets the flags in the MS such that all remote stations use the 24 inner tiles, the core stations are split, and no other flags are present
+    """
     antenna_table = tab.table(
         f"{output_file}::LOFAR_ANTENNA_FIELD", readonly=False, ack=False
     )
@@ -82,6 +88,9 @@ def _unflag_broken_tiles(array, output_file):
 
 
 def _reshape_columns(table_name, column_names, new_shape):
+    """
+    Helper function to add empty rows (for example, for added timesteps or channels) to the observation.
+    """
     table = tab.table(table_name, readonly=False, ack=False)
     for column_name in column_names:
         desc = table.getcoldesc(column_name)
@@ -93,6 +102,9 @@ def _reshape_columns(table_name, column_names, new_shape):
 
 
 def _create_frequency_channels(output_file, frequencies):
+    """
+    Sets the channels correctly in the MS
+    """
     subband_name = "CUSTOM_SB"
     n_freqs = len(frequencies)
     d_freq = abs(frequencies[1] - frequencies[0])
@@ -126,6 +138,9 @@ def _create_frequency_channels(output_file, frequencies):
 
 
 def _expand_in_time(output_file, times):
+    """
+    Expands the MS in time
+    """
     # metadata
     t_mjd = [Time(time).mjd * 24 * 3600 for time in times]
     start_time = t_mjd[0]
@@ -135,8 +150,10 @@ def _expand_in_time(output_file, times):
     n_times = len(times)
 
     out_ms = tab.table(output_file, readonly=False, ack=False)
-    tab.taql(f"""UPDATE $out_ms SET TIME=$start_time, TIME_CENTROID=$start_time,
-              EXPOSURE={time_resolution}, INTERVAL={time_resolution}""")
+    tab.taql(
+        f"""UPDATE $out_ms SET TIME=$start_time, TIME_CENTROID=$start_time,
+              EXPOSURE={time_resolution}, INTERVAL={time_resolution}"""
+    )
     tab.taql("UPDATE $out_ms::FEED SET TIME=$time_centroid")
     tab.taql("UPDATE $out_ms::FIELD SET TIME=$time_centroid")
     tab.taql(
@@ -158,6 +175,9 @@ def _expand_in_time(output_file, times):
 
 
 def _adjust_pointing(array, output_file):
+    """
+    Sets the pointing of the interferometer in the MS
+    """
     dec, ra = list(array.values())[0].d.values()
     pointing = np.array([[ra, dec]]) / 180 * np.pi
 
@@ -170,6 +190,9 @@ def _adjust_pointing(array, output_file):
 
 
 def _get_ms_order(output_file, baselines):
+    """
+    Helper function to copy the order of the antennas from the MS to the data, such that the data can be ordered in the same way.
+    """
     out_ms = tab.table(output_file, readonly=False, ack=False)
     antenna_names_ms = out_ms.ANTENNA.NAME[:]
     ms_order = [
@@ -184,6 +207,9 @@ def _get_ms_order(output_file, baselines):
 
 
 def _export_visibilities(output_file, visibilities, n_freqs, ms_order):
+    """
+    Exports the data to the MS
+    """
     # Reorder the baselines to MS standard
     reordered_visibilities = visibilities[:, :, ms_order]
 
@@ -207,6 +233,9 @@ def _export_visibilities(output_file, visibilities, n_freqs, ms_order):
 
 
 def _export_uvw_coordinates(output_file, array, times, baselines, ms_order):
+    """
+    Sets the station UVW coordinates (station positions) in the MS
+    """
     reordered_baselines = baselines[ms_order, :]
 
     # Obtain the Earth rotation angle to find the rotation of the UV-plane
@@ -257,6 +286,22 @@ def export_MS(
     template_name=f"{Path(__file__).parent.parent}/files/LOFAR_HBA_Dutch_template.MS",
     DP3_binding="DP3",
 ):
+    """
+    Function that converts visbility CSVs from SHIMMERR into MS.
+
+    Parameters
+    ----------
+    array : dict
+        dictionary of Station objects that form the interferometer
+    visibility_file : str
+        path + filename of the csv with the stored visibilities
+    output_file : str
+        path + filename of the MS in which the visibilities should be output
+    template_name : str, optional
+        path + filename of the MS template. Currently SHIMMERR is only packages with LOFAR HBA, but another template van be supplied by the user. This will change the ELEMENT_FLAGGING, however, (see the _unflag_broken_tiles function), by default f"<SHIMMERR home directory>/files/LOFAR_HBA_Dutch_template.MS"
+    DP3_binding : str, optional
+        binding to call DP3 from (for example if it should be called with a container), by default "DP3"
+    """
     # Load the data so the metadata is known
     with open(visibility_file) as csv_file:
         data = list(csv.DictReader(csv_file))

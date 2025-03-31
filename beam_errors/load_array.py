@@ -6,6 +6,29 @@ from lofarantpos.db import LofarAntennaDatabase
 
 
 def load_array_from_file(filepath, pointing_ra=None, pointing_dec=None):
+    """
+    Loads an array from a file supplied by the user. The file should be structured as follows:
+    - Stations are separated by empty lines, and start with a name (so the first line of the station "paragraph" is a string with its name)
+    - The rest of the block of a station consists of lines with 4 comma separated values.
+    -- The first is a tile identifier (any string)
+    -- The later 3 are antenna positions in ETRS coordinates
+    -- New tiles are automatically created when a new tile identifier is read
+    Comments can be added with a # sign at the start of a line
+
+    Parameters
+    ----------
+    filepath : str
+        path + filename of the file that contains the array.
+    pointing_ra : float, optional
+        Right ascension of the phase center in deg, by default None (drift-scan)
+    pointing_dec : float, optional
+        Declination of the phase center in deg, by default None (drift-scan)
+
+    Returns
+    -------
+    dict
+        Dictionary of SHIMMERR Station objects
+    """
     array = {}
     constructing_station = []
     tile = []
@@ -14,10 +37,13 @@ def load_array_from_file(filepath, pointing_ra=None, pointing_dec=None):
     with open(filepath, "r") as f:
         for line in f:
             inputline = line.strip("\n")
+            # Skip comments
             if inputline.startswith("#"):
                 continue
+
+            # Check for the end of a station, if this is found add it to the dict
             elif inputline == "":
-                if len(tile) > 0:
+                if len(tile) > 0:  # add leftover tiles
                     constructing_station.append(tile)
                 if len(constructing_station) > 0:
                     # station done
@@ -28,10 +54,12 @@ def load_array_from_file(filepath, pointing_ra=None, pointing_dec=None):
                     )
                     array[station_name] = full_station
 
+                    # Set up for the next station
                     constructing_station = []
                     tile = []
                     station_name = None
-            elif station_name is None:
+
+            elif station_name is None:  # Needed for the first station
                 station_name = inputline
             else:
                 tile_identifier, x, y, z = inputline.split(",")
@@ -46,6 +74,7 @@ def load_array_from_file(filepath, pointing_ra=None, pointing_dec=None):
                 new_position = np.array([x, y, z]).astype(float)
                 tile.append(new_position)
 
+    # Finish adding the last station
     if len(tile) > 0:
         constructing_station.append(tile)
     if len(constructing_station) > 0:
@@ -61,10 +90,28 @@ def load_array_from_file(filepath, pointing_ra=None, pointing_dec=None):
 
 
 def load_LOFAR(mode="EoR", pointing_ra=None, pointing_dec=None):
-    # Dutch, CS, international, EoR (gebruikte NL stations)
+    """
+    Loads LOFAR HBA using coordinates from Michiel Brentjens' LOFAR Antpos: https://github.com/brentjens/lofar-antenna-positions
+
+    Parameters
+    ----------
+    mode : str, optional
+        Beamforming mode, can be "CS" (only core stations), "Dutch tapered" (all Dutch stations, with the RS beamformed to act like a CS), "Dutch sensitive" (all Dutch stations, with all tiles in the RS functioning), "international" (all LOFAR stations from Lofarantpos), or "EoR" (stations with baselines shorter than ~10 km, in tapered setting, corresponds to the Epoch of Reionization science case), by default "EoR"
+    pointing_ra : float, optional
+        Right ascension of the phase center in deg, by default None (drift-scan)
+    pointing_dec : float, optional
+        Declination of the phase center in deg, by default None (drift-scan)
+
+    Returns
+    -------
+    dict
+        Dictionary of SHIMMERR Station objects
+    """
+    # Get the antenna positions
     db = LofarAntennaDatabase()
     antpos_stations = sorted(list(db.phase_centres.keys()))
 
+    # Select beamforming mode
     if mode == "CS":
         station_names = [
             station
@@ -131,6 +178,7 @@ def load_LOFAR(mode="EoR", pointing_ra=None, pointing_dec=None):
     else:
         raise ValueError(f"LOFAR mode {mode} not implemented.")
 
+    # If the RS are tapered to look like CS, these tiles are removed
     taper_tiles = [
         0,
         1,

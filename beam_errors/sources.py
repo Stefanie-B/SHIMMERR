@@ -11,6 +11,24 @@ class Source:
         spectral_index,
         logSI,
     ):
+        """
+        Class to describe a sky-model source. The brightness is computed as for a LOFAR sourcedb (see https://www.astron.nl/lofarwiki/doku.php?id=public:user_software:documentation:makesourcedb)
+
+        Parameters
+        ----------
+        right_ascension : str
+            RA in HH:MM:SS.SSS
+        declination : str
+            Dec in +-DD.MM.SS.SSS
+        brightness : float
+            Source brightness (I0)
+        reference_frequency : float
+            v0
+        spectral_index : str
+            str in the form [c0,c1,c2]
+        logSI : bool
+            whether the spectral index is logarithmic
+        """
         self.ra = self.parse_right_ascension(right_ascension)
         self.dec = self.parse_declination(declination)
         if logSI:
@@ -24,6 +42,9 @@ class Source:
 
     @staticmethod
     def parse_right_ascension(right_ascension_string):
+        """
+        Helper function to convert the RA to degrees
+        """
         right_ascension_string = right_ascension_string.strip(" ")
         HA, min, sec = right_ascension_string.split(":")
 
@@ -36,6 +57,9 @@ class Source:
 
     @staticmethod
     def parse_declination(declination_string):
+        """
+        Helper function to convert the Dec to degrees
+        """
         declination_string = declination_string.replace(" ", "")
         declination_string = declination_string.strip("+")
         fields = declination_string.split(".")
@@ -49,6 +73,9 @@ class Source:
     def logarithmic_spectral_index_brightness(
         frequency, brightness, reference_frequency, spectral_index
     ):
+        """
+        Helper function to calculate the brightness as a function of frequency for a logarithmic spectral index
+        """
         spectral_index = spectral_index.strip("[]").split(",")
         x = frequency / reference_frequency
         spectral_shape = x ** (
@@ -60,6 +87,9 @@ class Source:
     def linear_spectral_index_brightness(
         frequency, brightness, reference_frequency, spectral_index
     ):
+        """
+        Helper function to calculate the brightness as a function of frequency for a linear spectral index
+        """
         spectral_index = spectral_index.strip("[]").split(",")
         x = frequency / reference_frequency - 1
         spectral_shape = sum(float(c) * x**i for i, c in enumerate(spectral_index))
@@ -72,6 +102,16 @@ class Patch:
         patch_right_ascension,
         patch_declination,
     ):
+        """
+        Class that contains a calibration patch (group/cluster of sources)
+
+        Parameters
+        ----------
+        patch_right_ascension : str
+            RA in HH:MM:SS.SSS
+        patch_declination : str
+            Dec in +-DD.MM.SS.SSS
+        """
         self.elements = {}
         self.ra = Source.parse_right_ascension(patch_right_ascension)
         self.dec = Source.parse_declination(patch_declination)
@@ -86,6 +126,24 @@ class Patch:
         spectral_index,
         logSI,
     ):
+        """
+        Creates a source within the Patch. The brightness is computed as for a LOFAR sourcedb (see https://www.astron.nl/lofarwiki/doku.php?id=public:user_software:documentation:makesourcedb)
+
+        Parameters
+        ----------
+        right_ascension : str
+            RA in HH:MM:SS.SSS
+        declination : str
+            Dec in +-DD.MM.SS.SSS
+        brightness : float
+            Source brightness (I0)
+        reference_frequency : float
+            v0
+        spectral_index : str
+            str in the form [c0,c1,c2]
+        logSI : bool
+            whether the spectral index is logarithmic
+        """
         self.elements[source_name] = Source(
             right_ascension=right_ascension,
             declination=declination,
@@ -98,6 +156,14 @@ class Patch:
 
 class Skymodel:
     def __init__(self, filename):
+        """
+        Reads a skymodel from disk and converts it into a SHIMMERR sky model.
+
+        Parameters
+        ----------
+        filename : str
+            path + filename of the sky model
+        """
         self.elements = {}
         with open(filename, "r") as f:
             self.parse_formatstring(f.readline())

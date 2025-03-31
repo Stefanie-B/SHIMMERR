@@ -299,7 +299,9 @@ def predict_patch_visibilities(
                 header=(i == 0),
                 mode="w" if i == 0 else "a",
             )
-        if save_response:
+        if (
+            save_response
+        ):  # Allows for saving the beam response (the signal that is received by a single station rather than a baseline)
             all_beams.loc[:, "value"] = all_beams["value"] * all_beams.apply(
                 lambda row: source_powers[(row["source"], row["frequency"])], axis=1
             )
@@ -319,23 +321,42 @@ def predict_patch_visibilities(
 
 
 def add_thermal_noise(filename, data_path, sefd, seed):
+    """
+    Adds thermal noise to the visibilities
+
+    Parameters
+    ----------
+    filename : str
+        directory of the relevant visibilities. The input file with be at <path>/<filename>/full_model.csv, and the output file at <path>/<filename>/data.csv
+    data_path : str
+        data path (see filename)
+    sefd : float
+        system equivalent flux density of the noise
+    seed : int
+        seed for the randum number generator
+    """
     file_name_in = f"{data_path}/{filename}/full_model.csv"
     file_name_out = f"{data_path}/{filename}/data.csv"
     first_batch = True
     rng = np.random.default_rng(seed=seed)
     for batch in pd.read_csv(file_name_in, chunksize=int(1e5)):
         if first_batch:
+            # Obtain metadata
             d_frequency = np.diff(np.unique(batch["frequency"]).astype(float))[0]
             times = np.unique(batch["time"])
             t1 = Time(times[0])
             t2 = Time(times[1])
             d_time = (t2 - t1).sec
+            # noise std, the factor 2 is for the 2 random numbers (real + imag)
             std_dev = sefd / np.sqrt(2 * d_time * d_frequency)
+
+        # add the noise
         visibility = batch["visibility"].values.astype(complex)
         noise = rng.standard_normal(2 * visibility.size) * std_dev
         complex_noise = noise[: visibility.size] + 1j * noise[visibility.size :]
         noisy_visibility = visibility + complex_noise.reshape(visibility.shape)
 
+        # write
         batch["visibility"] = noisy_visibility
         batch.to_csv(
             file_name_out,
@@ -347,15 +368,29 @@ def add_thermal_noise(filename, data_path, sefd, seed):
 
 
 def sum_patches(filename, data_path, skymodel):
+    """
+    Sums all patch models to create a full sky visibility prediction
+
+    Parameters
+    ----------
+    filename : str
+        directory of the relevant visibilities. The summed file with be at <path>/<filename>/full_model.csv, and the patch models must be at <path>/<filename>/patch_models
+    data_path : str
+        data path (see filename)
+    skymodel : dict
+        SHIMMERR sky model (used for patch names only)
+    """
     model_directory = f"{data_path}/{filename}/patch_models/"
     file_name_out = f"{data_path}/{filename}/full_model.csv"
 
+    # obtain data
     patch_names = list(skymodel.elements.keys())
     all_files = [f"{model_directory}{patch_name}.csv" for patch_name in patch_names]
     patch_dataframes = [pd.read_csv(file) for file in all_files]
     for patch_dataframe in patch_dataframes:
         patch_dataframe["visibility"] = patch_dataframe["visibility"].astype(complex)
 
+    # sum data
     full_model = (
         pd.concat(patch_dataframes)
         .groupby(["time", "frequency", "baseline"], observed=True)
@@ -363,6 +398,7 @@ def sum_patches(filename, data_path, skymodel):
         .reset_index()
     )
 
+    # write out
     full_model.to_csv(
         file_name_out,
         index=False,
@@ -388,6 +424,43 @@ def predict_data(
     seed=None,
     n_jobs=-1,
 ):
+    """
+    Performs a full visibility predict from a sky model and interferometer.
+
+    Parameters
+    ----------
+    array : dict
+        dict of SHIMMERR stations that describe the interferometer (see array.py and load_array.py)
+    skymodel : dict
+        dict of SHIMMERR patches that describe the sources in the sky (see sources.py)
+    frequencies : list or ndarray of floats
+        Frequencies at which to simulate the array. We simulate no smearing etc.
+    start_time_utc : str
+        UTC start time of the observation in format YYYY-MM-DDThh:mm:ss, example: 2024-07-04T19:25:00
+    filename : str
+        name of the folder in which the visibilities should be saved
+    data_path : str, optional
+        folder in which the destination folder should be saved, by default "./data/predictions"
+    time_resolution : int, optional
+        time resolution in seconds, by default 2
+    duration : int, optional
+        observation duration in hours, by default 12
+    antenna_mode : str, optional
+        beam mode for the lowest level elements, by default "omnidirectional"
+    basestation : str, optional
+        name of the station used as the 'array center', by default None (selects the first station in the array dictionary)
+    reuse_tile_beam : bool, optional
+        If set, uses the same tile model for all tiles in a stationm. This does not allow for intra-tile variation, but does speed up the computation. Recommended for the calibration model predict, by default False (all tiles computed separately)
+    SEFD : float, optional
+        System equivalent flux density of the noise in Jy. Set to None to disable noise, by default 4.2e3
+    save_response : bool, optional
+        toggles whether the station responses are saved to enable computing the expected gain. Default is True.
+    seed : int, optional
+        seed for the random number generator that creates the noise, set to anything but None for reproducability, by default None
+    n_jobs : int, optional
+        Number of prediction processes that are allowed to run in parallel (ideally equal to the number of CPU cores), by default -1 (all cores used)
+    """
+    # calculates all patches
     predict_patch_visibilities(
         array=array,
         skymodel=skymodel,
@@ -404,8 +477,10 @@ def predict_data(
         n_jobs=n_jobs,
     )
 
+    # Sums the patches together (used for the full visibility)
     sum_patches(filename, data_path, skymodel)
 
+    # Add noise
     if SEFD is not None:
         add_thermal_noise(filename, data_path, SEFD, seed)
     else:
@@ -415,6 +490,20 @@ def predict_data(
 
 
 def subtract_visibilities(filename_in_1, filename_in_2, filename_out, common_path=""):
+    """
+    Function to take the difference between visibilities (for source subtraction)
+
+    Parameters
+    ----------
+    filename_in_1 : str
+        filename of the visibilities from which the sources must be subtracted
+    filename_in_2 : str
+        filename of the visibilities with the sources that must be subtracted
+    filename_out : str
+        filename where the result must be stored
+    common_path : str, optional
+        path for these files (the paths can also be added to the filename, in which case this would be root), by default ""
+    """
     first_batch = True
 
     iterator_file_1 = pd.read_csv(f"{common_path}/{filename_in_1}", chunksize=int(1e5))

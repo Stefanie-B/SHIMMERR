@@ -1,0 +1,77 @@
+SHIMMERR package
+================
+
+Submodules
+----------
+
+SHIMMERR.array module
+---------------------
+
+.. automodule:: SHIMMERR.array
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.calibration module
+---------------------------
+
+.. automodule:: SHIMMERR.calibration
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.export module
+----------------------
+
+.. automodule:: SHIMMERR.export
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.load\_array module
+---------------------------
+
+.. automodule:: SHIMMERR.load_array
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.metrics module
+-----------------------
+
+.. automodule:: SHIMMERR.metrics
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.sources module
+-----------------------
+
+.. automodule:: SHIMMERR.sources
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.visibility module
+--------------------------
+
+.. automodule:: SHIMMERR.visibility
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+SHIMMERR.visualization module
+-----------------------------
+
+.. automodule:: SHIMMERR.visualization
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: SHIMMERR
+   :members:
+   :show-inheritance:
+   :undoc-members:

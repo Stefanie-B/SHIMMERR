@@ -1,0 +1,18 @@
+.. SHIMMERR documentation master file, created by
+   sphinx-quickstart on Mon Mar 31 11:46:10 2025.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+SHIMMERR documentation
+======================
+
+Documentation for the SHIMMERR python package. See the `repository GitHub <https://github.com/Stefanie-B/SHIMMERR>`_
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   shimmerr
+   modules
+

@@ -3,6 +3,6 @@ joblib>=1.4.2
 lofarantpos>=0.7.0
 matplotlib>=3.10.1
 numba>=0.60.0
-numpy>=2.2.4
+numpy
 pandas>=2.2.3
 tqdm>=4.66.4

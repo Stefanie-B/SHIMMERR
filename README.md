@@ -10,7 +10,7 @@ SHIMMERR (Station Heterogeneity Impact on Multi-dimensional beam-Modelling Error
 The `load_array` submodule can be used to either load a LOFAR Station (packaged with SHIMMERR), or read an array from a CSV file with ETRS coordinates (with `load_array_from_file`).
 ```
 from shimmerr.load_array import load_LOFAR
-interferometer = load_LOFAR(mode="Dutch sensitive", pointing_ra=0, pointing_dec=90)
+interferometer = load_LOFAR(mode="Dutch_sensitive", pointing_ra=0, pointing_dec=90)
 station = interferometer["RS503HBA"]
 ```
 

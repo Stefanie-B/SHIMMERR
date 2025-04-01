@@ -180,7 +180,8 @@ Recommended: `pip install shimmerr`
 
 - `astropy`
 - `matplotlib`
-- `numbda`
+- `scipy`
+- `numba`
 - `numpy`
 - `pandas`
 - `tqdm`

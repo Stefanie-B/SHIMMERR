@@ -176,6 +176,8 @@ The full Sphinx docs can be found [here](https://stefanie-b.github.io/shimmerr/)
 Recommended: `pip install shimmerr`
 
 ## Requirements
+`shimmerr` requires Python version 3.11 or higher, and a 64-bit platform (for `numba.jit`)
+
 - `astropy`
 - `matplotlib`
 - `numbda`
